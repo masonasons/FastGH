@@ -669,7 +669,8 @@ class JobLogsDialog(wx.Dialog):
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Job info
-        info_label = wx.StaticText(self.panel, label=f"Job: {self.job.name} ({self.job.get_status_text()})")
+        status_text = self.job.conclusion or self.job.status.replace("_", " ")
+        info_label = wx.StaticText(self.panel, label=f"Job: {self.job.name} ({status_text})")
         main_sizer.Add(info_label, 0, wx.ALL, 10)
 
         # Logs text
