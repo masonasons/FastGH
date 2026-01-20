@@ -107,9 +107,9 @@ class ForksDialog(wx.Dialog):
         self.view_btn.Enable()
 
         for fork in forks:
-            # Format: owner/name - stars | last updated
-            updated = fork._format_relative_time() if fork.updated_at else "Unknown"
-            display = f"{fork.full_name} - {fork.stars} stars | Updated {updated}"
+            # Format: owner/name - stars | last pushed
+            pushed = fork._format_relative_time() if fork.pushed_at else "Unknown"
+            display = f"{fork.full_name} - {fork.stars} stars | Pushed {pushed}"
             self.forks_list.Append(display)
 
         if forks:

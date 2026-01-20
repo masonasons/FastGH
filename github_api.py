@@ -229,8 +229,8 @@ class GitHubAccount:
 
         self.me = response.json()
 
-    def get_repos(self, sort="updated", per_page=100) -> list[Repository]:
-        """Get user's repositories, sorted by last updated."""
+    def get_repos(self, sort="pushed", per_page=100) -> list[Repository]:
+        """Get user's repositories, sorted by last push time."""
         repos = []
         page = 1
 
@@ -264,7 +264,7 @@ class GitHubAccount:
         return repos
 
     def get_starred(self, per_page=100) -> list[Repository]:
-        """Get user's starred repositories, sorted by last updated."""
+        """Get user's starred repositories, sorted by last push time."""
         repos = []
         page = 1
 
@@ -272,8 +272,6 @@ class GitHubAccount:
             response = self._session.get(
                 f"{GITHUB_API_URL}/user/starred",
                 params={
-                    "sort": "updated",
-                    "direction": "desc",
                     "per_page": per_page,
                     "page": page
                 }
@@ -294,13 +292,13 @@ class GitHubAccount:
 
             page += 1
 
-        # Sort by updated_at descending (use epoch for None values)
+        # Sort by pushed_at descending (use epoch for None values)
         epoch = datetime(1970, 1, 1)
-        repos.sort(key=lambda r: r.updated_at.replace(tzinfo=None) if r.updated_at else epoch, reverse=True)
+        repos.sort(key=lambda r: r.pushed_at.replace(tzinfo=None) if r.pushed_at else epoch, reverse=True)
         return repos
 
     def get_watched(self, per_page=100) -> list[Repository]:
-        """Get user's watched/subscribed repositories, sorted by last updated."""
+        """Get user's watched/subscribed repositories, sorted by last push time."""
         repos = []
         page = 1
 
@@ -328,9 +326,9 @@ class GitHubAccount:
 
             page += 1
 
-        # Sort by updated_at descending (use epoch for None values)
+        # Sort by pushed_at descending (use epoch for None values)
         epoch = datetime(1970, 1, 1)
-        repos.sort(key=lambda r: r.updated_at.replace(tzinfo=None) if r.updated_at else epoch, reverse=True)
+        repos.sort(key=lambda r: r.pushed_at.replace(tzinfo=None) if r.pushed_at else epoch, reverse=True)
         return repos
 
     def get_repo(self, owner: str, repo: str) -> Repository | None:
@@ -864,7 +862,7 @@ class GitHubAccount:
 
         return UserProfile.from_github_api(response.json())
 
-    def get_user_repos(self, username: str, sort: str = "updated", per_page: int = 100) -> list[Repository]:
+    def get_user_repos(self, username: str, sort: str = "pushed", per_page: int = 100) -> list[Repository]:
         """Get a user's public repositories."""
         repos = []
         page = 1

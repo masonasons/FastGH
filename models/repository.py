@@ -18,6 +18,7 @@ class Repository:
     open_issues: int
     language: Optional[str]
     updated_at: Optional[datetime]
+    pushed_at: Optional[datetime]
     url: str
     html_url: str
     private: bool
@@ -32,6 +33,13 @@ class Repository:
             except (ValueError, AttributeError):
                 pass
 
+        pushed_at = None
+        if data.get('pushed_at'):
+            try:
+                pushed_at = datetime.fromisoformat(data['pushed_at'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+
         return cls(
             id=data['id'],
             name=data['name'],
@@ -43,6 +51,7 @@ class Repository:
             open_issues=data.get('open_issues_count', 0),
             language=data.get('language'),
             updated_at=updated_at,
+            pushed_at=pushed_at,
             url=data['url'],
             html_url=data['html_url'],
             private=data.get('private', False),
@@ -55,28 +64,28 @@ class Repository:
             desc = desc[:77] + "..."
 
         lang = self.language or "Unknown"
-        updated = self._format_relative_time() if self.updated_at else "Unknown"
+        pushed = self._format_relative_time() if self.pushed_at else "Unknown"
 
         return (
             f"{self.full_name} - {desc}\n"
             f"Stars: {self.stars} | Forks: {self.forks} | "
-            f"Issues: {self.open_issues} | {lang} | Updated {updated}"
+            f"Issues: {self.open_issues} | {lang} | Pushed {pushed}"
         )
 
     def format_single_line(self) -> str:
         """Format repository for single-line display."""
         desc = self.description or "No description"
         lang = self.language or "Unknown"
-        updated = self._format_relative_time() if self.updated_at else "Unknown"
-        return f"{self.full_name}: {desc} | {self.stars} stars | {lang} | Updated {updated}"
+        pushed = self._format_relative_time() if self.pushed_at else "Unknown"
+        return f"{self.full_name}: {desc} | {self.stars} stars | {lang} | Pushed {pushed}"
 
     def _format_relative_time(self) -> str:
-        """Format updated_at as relative time."""
-        if not self.updated_at:
+        """Format pushed_at as relative time."""
+        if not self.pushed_at:
             return "Unknown"
 
-        now = datetime.now(self.updated_at.tzinfo) if self.updated_at.tzinfo else datetime.now()
-        diff = now - self.updated_at
+        now = datetime.now(self.pushed_at.tzinfo) if self.pushed_at.tzinfo else datetime.now()
+        diff = now - self.pushed_at
 
         if diff.days > 365:
             years = diff.days // 365

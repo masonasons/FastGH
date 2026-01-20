@@ -71,8 +71,8 @@ class ViewRepoDialog(wx.Dialog):
         details.append(f"Forks: {self.repo.forks}")
         details.append(f"Open Issues: {self.repo.open_issues}")
         details.append(f"Visibility: {'Private' if self.repo.private else 'Public'}")
-        if self.repo.updated_at:
-            details.append(f"Last Updated: {self.repo._format_relative_time()} ({self.repo.updated_at.strftime('%Y-%m-%d %H:%M')})")
+        if self.repo.pushed_at:
+            details.append(f"Last Push: {self.repo._format_relative_time()} ({self.repo.pushed_at.strftime('%Y-%m-%d %H:%M')})")
         details.append(f"URL: {self.repo.html_url}")
 
         separator = "\r\n" if platform.system() != "Darwin" else "\n"

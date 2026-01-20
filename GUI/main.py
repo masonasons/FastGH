@@ -703,8 +703,8 @@ class MainGui(wx.Frame):
         if not self.app.prefs.notify_starred:
             return
 
-        # Get IDs with their update timestamps
-        new_ids = {(r.id, r.updated_at.isoformat() if r.updated_at else "") for r in new_starred}
+        # Get IDs with their push timestamps
+        new_ids = {(r.id, r.pushed_at.isoformat() if r.pushed_at else "") for r in new_starred}
         new_id_only = {r.id for r in new_starred}
 
         # Skip first load
@@ -714,10 +714,10 @@ class MainGui(wx.Frame):
 
         old_id_only = {id for id, _ in self._last_starred_ids}
 
-        # Find repos that have new updates (same ID but different timestamp)
+        # Find repos that have new pushes (same ID but different timestamp)
         updated_repos = []
         for repo in new_starred:
-            repo_key = (repo.id, repo.updated_at.isoformat() if repo.updated_at else "")
+            repo_key = (repo.id, repo.pushed_at.isoformat() if repo.pushed_at else "")
             old_key = next((k for k in self._last_starred_ids if k[0] == repo.id), None)
             if old_key and old_key != repo_key:
                 updated_repos.append(repo)
@@ -737,18 +737,18 @@ class MainGui(wx.Frame):
         if not self.app.prefs.notify_watched:
             return
 
-        # Get IDs with their update timestamps
-        new_ids = {(r.id, r.updated_at.isoformat() if r.updated_at else "") for r in new_watched}
+        # Get IDs with their push timestamps
+        new_ids = {(r.id, r.pushed_at.isoformat() if r.pushed_at else "") for r in new_watched}
 
         # Skip first load
         if self._last_watched_ids is None:
             self._last_watched_ids = new_ids
             return
 
-        # Find repos that have new updates
+        # Find repos that have new pushes
         updated_repos = []
         for repo in new_watched:
-            repo_key = (repo.id, repo.updated_at.isoformat() if repo.updated_at else "")
+            repo_key = (repo.id, repo.pushed_at.isoformat() if repo.pushed_at else "")
             old_key = next((k for k in self._last_watched_ids if k[0] == repo.id), None)
             if old_key and old_key != repo_key:
                 updated_repos.append(repo)
