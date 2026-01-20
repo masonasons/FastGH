@@ -57,7 +57,9 @@ def apply_theme(window, dark_mode=None):
     elif dark_mode == "on":
         use_dark = True
     else:
-        use_dark = False
+        # "off" - don't apply any custom theme, use wxWidgets defaults
+        _reset_theme_recursive(window)
+        return
 
     if use_dark:
         bg = DARK_BG
@@ -84,6 +86,22 @@ def _apply_theme_recursive(window, bg, fg, ctrl_bg):
         # Apply to all children
         for child in window.GetChildren():
             _apply_theme_recursive(child, bg, fg, ctrl_bg)
+
+        window.Refresh()
+    except:
+        pass
+
+
+def _reset_theme_recursive(window):
+    """Reset theme to wxWidgets defaults."""
+    try:
+        # Use wx.NullColour to reset to system defaults
+        window.SetBackgroundColour(wx.NullColour)
+        window.SetForegroundColour(wx.NullColour)
+
+        # Reset all children
+        for child in window.GetChildren():
+            _reset_theme_recursive(child)
 
         window.Refresh()
     except:

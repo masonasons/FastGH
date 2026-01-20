@@ -24,7 +24,7 @@ class OptionsDialog(wx.Dialog):
         self.app = get_app()
         self.parent_window = parent
 
-        wx.Dialog.__init__(self, parent, title="Options", size=(500, 550))
+        wx.Dialog.__init__(self, parent, title="Options", size=(500, 620))
 
         self.init_ui()
         self.bind_events()
@@ -179,6 +179,31 @@ class OptionsDialog(wx.Dialog):
 
             main_sizer.Add(hotkey_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
+        # Appearance section
+        appearance_box = wx.StaticBox(self.panel, label="Appearance")
+        appearance_sizer = wx.StaticBoxSizer(appearance_box, wx.VERTICAL)
+
+        # Dark mode row
+        dark_mode_row = wx.BoxSizer(wx.HORIZONTAL)
+
+        dark_mode_label = wx.StaticText(self.panel, label="&Dark mode:")
+        dark_mode_row.Add(dark_mode_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+
+        self.dark_mode_choice = wx.Choice(
+            self.panel,
+            choices=["Off", "Auto (follow system)", "On"]
+        )
+        self.dark_mode_choice.SetToolTip(
+            "Off: Always use light theme\n"
+            "Auto: Follow system theme setting\n"
+            "On: Always use dark theme"
+        )
+        dark_mode_row.Add(self.dark_mode_choice, 0)
+
+        appearance_sizer.Add(dark_mode_row, 0, wx.ALL, 10)
+
+        main_sizer.Add(appearance_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         # Spacer
         main_sizer.AddStretchSpacer()
 
@@ -234,6 +259,17 @@ class OptionsDialog(wx.Dialog):
         if HOTKEY_SUPPORTED:
             self.hotkey_text.SetValue(self.app.prefs.global_hotkey)
 
+        # Dark mode setting
+        dark_mode = self.app.prefs.dark_mode
+        if dark_mode == "off":
+            self.dark_mode_choice.SetSelection(0)
+        elif dark_mode == "auto":
+            self.dark_mode_choice.SetSelection(1)
+        elif dark_mode == "on":
+            self.dark_mode_choice.SetSelection(2)
+        else:
+            self.dark_mode_choice.SetSelection(0)
+
     def save_settings(self):
         """Save settings from the dialog."""
         self.app.prefs.commit_limit = self.limit_spin.GetValue()
@@ -288,6 +324,21 @@ class OptionsDialog(wx.Dialog):
                         wx.OK | wx.ICON_ERROR
                     )
                     return False
+
+        # Save dark mode setting
+        dark_mode_selection = self.dark_mode_choice.GetSelection()
+        dark_mode_values = ["off", "auto", "on"]
+        old_dark_mode = self.app.prefs.dark_mode
+        new_dark_mode = dark_mode_values[dark_mode_selection]
+        self.app.prefs.dark_mode = new_dark_mode
+
+        # Apply theme if dark mode changed
+        if old_dark_mode != new_dark_mode:
+            from GUI import main
+            if main.window:
+                theme.apply_theme(main.window)
+                # Also apply to this dialog
+                theme.apply_theme(self)
 
         return True
 

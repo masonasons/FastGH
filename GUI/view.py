@@ -123,6 +123,9 @@ class ViewRepoDialog(wx.Dialog):
         self.releases_btn = wx.Button(self.panel, -1, "View &Releases")
         btn_row2.Add(self.releases_btn, 0, wx.RIGHT, 5)
 
+        self.forks_btn = wx.Button(self.panel, -1, "View F&orks")
+        btn_row2.Add(self.forks_btn, 0, wx.RIGHT, 5)
+
         self.owner_btn = wx.Button(self.panel, -1, "View O&wner")
         btn_row2.Add(self.owner_btn, 0, wx.RIGHT, 5)
 
@@ -150,6 +153,7 @@ class ViewRepoDialog(wx.Dialog):
         self.commits_btn.Bind(wx.EVT_BUTTON, self.on_view_commits)
         self.actions_btn.Bind(wx.EVT_BUTTON, self.on_view_actions)
         self.releases_btn.Bind(wx.EVT_BUTTON, self.on_view_releases)
+        self.forks_btn.Bind(wx.EVT_BUTTON, self.on_view_forks)
         self.owner_btn.Bind(wx.EVT_BUTTON, self.on_view_owner)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
 
@@ -419,6 +423,13 @@ class ViewRepoDialog(wx.Dialog):
         """Open releases dialog."""
         from GUI.releases import ReleasesDialog
         dlg = ReleasesDialog(self, self.repo)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def on_view_forks(self, event):
+        """Open forks dialog."""
+        from GUI.forks import ForksDialog
+        dlg = ForksDialog(self, self.repo)
         dlg.ShowModal()
         dlg.Destroy()
 

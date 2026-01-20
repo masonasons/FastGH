@@ -1631,3 +1631,47 @@ class GitHubAccount:
         if response.status_code == 200:
             return response.text
         return None
+
+    # ============ Forks API ============
+
+    def get_forks(self, owner: str, repo: str, sort: str = "newest", per_page: int = 100) -> list[Repository]:
+        """Get forks of a repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            sort: Sort order - 'newest', 'oldest', 'stargazers', 'watchers'
+            per_page: Results per page
+
+        Returns:
+            List of Repository objects representing the forks
+        """
+        forks = []
+        page = 1
+
+        while True:
+            response = self._session.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}/forks",
+                params={
+                    "sort": sort,
+                    "per_page": per_page,
+                    "page": page
+                }
+            )
+
+            if response.status_code != 200:
+                break
+
+            data = response.json()
+            if not data:
+                break
+
+            for item in data:
+                forks.append(Repository.from_github_api(item))
+
+            if len(data) < per_page:
+                break
+
+            page += 1
+
+        return forks
