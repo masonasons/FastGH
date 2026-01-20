@@ -105,6 +105,9 @@ class ViewRepoDialog(wx.Dialog):
         # Buttons - second row
         btn_row2 = wx.BoxSizer(wx.HORIZONTAL)
 
+        self.files_btn = wx.Button(self.panel, -1, "View &Files")
+        btn_row2.Add(self.files_btn, 0, wx.RIGHT, 5)
+
         self.issues_btn = wx.Button(self.panel, -1, "View &Issues")
         btn_row2.Add(self.issues_btn, 0, wx.RIGHT, 5)
 
@@ -140,6 +143,7 @@ class ViewRepoDialog(wx.Dialog):
         self.copy_url_btn.Bind(wx.EVT_BUTTON, self.on_copy_url)
         self.copy_clone_btn.Bind(wx.EVT_BUTTON, self.on_copy_clone)
         self.git_btn.Bind(wx.EVT_BUTTON, self.on_git)
+        self.files_btn.Bind(wx.EVT_BUTTON, self.on_view_files)
         self.issues_btn.Bind(wx.EVT_BUTTON, self.on_view_issues)
         self.prs_btn.Bind(wx.EVT_BUTTON, self.on_view_prs)
         self.commits_btn.Bind(wx.EVT_BUTTON, self.on_view_commits)
@@ -367,6 +371,13 @@ class ViewRepoDialog(wx.Dialog):
                 )
         except RuntimeError:
             pass  # Dialog was destroyed
+
+    def on_view_files(self, event):
+        """Open file browser dialog."""
+        from GUI.files import FileBrowserDialog
+        dlg = FileBrowserDialog(self, self.repo)
+        dlg.ShowModal()
+        dlg.Destroy()
 
     def on_view_issues(self, event):
         """Open issues dialog."""

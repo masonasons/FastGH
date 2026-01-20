@@ -14,6 +14,7 @@ from models.workflow import Workflow, WorkflowRun, WorkflowJob
 from models.release import Release, ReleaseAsset
 from models.notification import Notification
 from models.event import Event
+from models.content import ContentItem
 
 # GitHub OAuth App Client ID
 # You need to create an OAuth App at https://github.com/settings/developers
@@ -1539,3 +1540,94 @@ class GitHubAccount:
             events.append(Event.from_api(item))
 
         return events
+
+    # ============ Repository Contents API ============
+
+    def get_contents(self, owner: str, repo: str, path: str = "", ref: str = None) -> list[ContentItem] | ContentItem | None:
+        """Get contents of a file or directory in a repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            path: Path to file or directory (empty for root)
+            ref: Branch, tag, or commit SHA (default: default branch)
+
+        Returns:
+            List of ContentItem for directories, single ContentItem for files, or None on error
+        """
+        params = {}
+        if ref:
+            params["ref"] = ref
+
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents/{path}",
+            params=params
+        )
+
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+
+        # Directory returns a list, file returns a single object
+        if isinstance(data, list):
+            items = []
+            for item in data:
+                items.append(ContentItem.from_github_api(item))
+            # Sort: directories first, then files, both alphabetically
+            items.sort(key=lambda x: (0 if x.type == "dir" else 1, x.name.lower()))
+            return items
+        else:
+            return ContentItem.from_github_api(data)
+
+    def get_file_content(self, owner: str, repo: str, path: str, ref: str = None) -> str | None:
+        """Get the decoded content of a file.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            path: Path to the file
+            ref: Branch, tag, or commit SHA (default: default branch)
+
+        Returns:
+            Decoded file content as string, or None on error
+        """
+        item = self.get_contents(owner, repo, path, ref)
+
+        if item is None or isinstance(item, list):
+            return None
+
+        if item.content and item.encoding == "base64":
+            import base64
+            try:
+                return base64.b64decode(item.content).decode('utf-8')
+            except (UnicodeDecodeError, ValueError):
+                # Binary file or decode error
+                return None
+
+        return None
+
+    def get_readme(self, owner: str, repo: str, ref: str = None) -> str | None:
+        """Get the README content for a repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            ref: Branch, tag, or commit SHA (default: default branch)
+
+        Returns:
+            README content as string, or None if not found
+        """
+        params = {}
+        if ref:
+            params["ref"] = ref
+
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/readme",
+            params=params,
+            headers={"Accept": "application/vnd.github.raw"}
+        )
+
+        if response.status_code == 200:
+            return response.text
+        return None
