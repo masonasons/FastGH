@@ -112,6 +112,7 @@ class ActionsDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.workflow_choice.Bind(wx.EVT_CHOICE, self.on_filter_change)
         self.status_choice.Bind(wx.EVT_CHOICE, self.on_filter_change)
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
@@ -124,6 +125,13 @@ class ActionsDialog(wx.Dialog):
         self.runs_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.runs_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.runs_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_workflows(self):
         """Load workflows in background."""
@@ -511,6 +519,7 @@ class ViewWorkflowRunDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.view_logs_btn.Bind(wx.EVT_BUTTON, self.on_view_logs)
         self.rerun_btn.Bind(wx.EVT_BUTTON, self.on_rerun)
         self.rerun_failed_btn.Bind(wx.EVT_BUTTON, self.on_rerun_failed)
@@ -520,6 +529,13 @@ class ViewWorkflowRunDialog(wx.Dialog):
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
         self.jobs_list.Bind(wx.EVT_LISTBOX, self.on_job_selection_change)
         self.jobs_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view_logs)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def on_job_selection_change(self, event):
         """Handle job selection change - show steps."""
@@ -710,10 +726,18 @@ class JobLogsDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
         self.copy_btn.Bind(wx.EVT_BUTTON, self.on_copy)
         self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_logs(self):
         """Load job logs in background."""

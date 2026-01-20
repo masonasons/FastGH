@@ -137,6 +137,7 @@ class ViewRepoDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.star_btn.Bind(wx.EVT_BUTTON, self.on_toggle_star)
         self.watch_btn.Bind(wx.EVT_BUTTON, self.on_toggle_watch)
         self.open_btn.Bind(wx.EVT_BUTTON, self.on_open)
@@ -151,6 +152,13 @@ class ViewRepoDialog(wx.Dialog):
         self.releases_btn.Bind(wx.EVT_BUTTON, self.on_view_releases)
         self.owner_btn.Bind(wx.EVT_BUTTON, self.on_view_owner)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def check_status(self):
         """Check star/watch status in background."""

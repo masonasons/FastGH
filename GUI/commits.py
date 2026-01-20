@@ -92,6 +92,7 @@ class CommitsDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.branch_choice.Bind(wx.EVT_CHOICE, self.on_branch_change)
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
         self.view_btn.Bind(wx.EVT_BUTTON, self.on_view)
@@ -101,6 +102,13 @@ class CommitsDialog(wx.Dialog):
         self.commits_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.commits_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.commits_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_branches(self):
         """Load branches in background."""
@@ -390,11 +398,19 @@ class ViewCommitDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.copy_sha_btn.Bind(wx.EVT_BUTTON, self.on_copy_sha)
         self.copy_msg_btn.Bind(wx.EVT_BUTTON, self.on_copy_message)
         self.copy_filename_btn.Bind(wx.EVT_BUTTON, self.on_copy_filename)
         self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def on_copy_sha(self, event):
         """Copy SHA to clipboard."""

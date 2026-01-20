@@ -91,6 +91,7 @@ class SearchDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.type_choice.Bind(wx.EVT_CHOICE, self.on_type_change)
         self.query_text.Bind(wx.EVT_TEXT_ENTER, self.on_search)
         self.search_btn.Bind(wx.EVT_BUTTON, self.on_search)
@@ -100,6 +101,13 @@ class SearchDialog(wx.Dialog):
         self.results_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.results_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.results_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def on_type_change(self, event):
         """Handle search type change."""
@@ -308,6 +316,7 @@ class UserProfileDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.follow_btn.Bind(wx.EVT_BUTTON, self.on_toggle_follow)
         self.view_repo_btn.Bind(wx.EVT_BUTTON, self.on_view_repo)
         self.open_profile_btn.Bind(wx.EVT_BUTTON, self.on_open_profile)
@@ -316,6 +325,13 @@ class UserProfileDialog(wx.Dialog):
         self.repos_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view_repo)
         self.repos_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.repos_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_user(self):
         """Load user data in background."""

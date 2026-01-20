@@ -89,6 +89,7 @@ class PullRequestsDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.filter_choice.Bind(wx.EVT_CHOICE, self.on_filter_change)
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
         self.view_btn.Bind(wx.EVT_BUTTON, self.on_view)
@@ -100,6 +101,13 @@ class PullRequestsDialog(wx.Dialog):
         self.pr_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.pr_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.pr_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def check_permissions(self):
         """Check if user can merge PRs."""
@@ -402,12 +410,20 @@ class ViewPullRequestDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.comments_list.Bind(wx.EVT_LISTBOX, self.on_comment_select)
         self.add_comment_btn.Bind(wx.EVT_BUTTON, self.on_add_comment)
         self.merge_btn.Bind(wx.EVT_BUTTON, self.on_merge)
         self.close_pr_btn.Bind(wx.EVT_BUTTON, self.on_close_pr)
         self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_comments(self):
         """Load comments in background."""
@@ -512,7 +528,19 @@ class MergeDialog(wx.Dialog):
         wx.Dialog.__init__(self, parent, title=title, size=(500, 350))
 
         self.init_ui()
+        self.bind_events()
         theme.apply_theme(self)
+
+    def bind_events(self):
+        """Bind event handlers."""
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.EndModal(wx.ID_CANCEL)
+        else:
+            event.Skip()
 
     def init_ui(self):
         """Initialize UI."""

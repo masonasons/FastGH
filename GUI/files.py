@@ -85,14 +85,27 @@ class FileBrowserDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.back_btn.Bind(wx.EVT_BUTTON, self.on_back)
         self.home_btn.Bind(wx.EVT_BUTTON, self.on_home)
         self.file_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_item_activate)
-        self.file_list.Bind(wx.EVT_CHAR_HOOK, self.on_key)
         self.view_btn.Bind(wx.EVT_BUTTON, self.on_view)
         self.open_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.copy_url_btn.Bind(wx.EVT_BUTTON, self.on_copy_url)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        key = event.GetKeyCode()
+        if key == wx.WXK_ESCAPE:
+            self.on_close(None)
+        elif key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
+            self.activate_selected()
+        elif key == wx.WXK_BACK:
+            if self.path_history:
+                self.on_back(None)
+        else:
+            event.Skip()
 
     def load_contents(self, path: str):
         """Load contents of a directory."""
@@ -152,18 +165,6 @@ class FileBrowserDialog(wx.Dialog):
     def on_item_activate(self, event):
         """Handle double-click or Enter on item."""
         self.activate_selected()
-
-    def on_key(self, event):
-        """Handle keyboard input."""
-        key = event.GetKeyCode()
-
-        if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.activate_selected()
-        elif key == wx.WXK_BACK:
-            if self.path_history:
-                self.on_back(None)
-        else:
-            event.Skip()
 
     def activate_selected(self):
         """Activate the selected item (enter directory or view file)."""
@@ -289,10 +290,18 @@ class ViewFileDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.copy_btn.Bind(wx.EVT_BUTTON, self.on_copy)
         self.open_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.download_btn.Bind(wx.EVT_BUTTON, self.on_download)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_content(self):
         """Load the file content."""

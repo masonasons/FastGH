@@ -80,6 +80,7 @@ class ReleasesDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.view_btn.Bind(wx.EVT_BUTTON, self.on_view)
         self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.download_zip_btn.Bind(wx.EVT_BUTTON, self.on_download_zip)
@@ -88,6 +89,13 @@ class ReleasesDialog(wx.Dialog):
         self.releases_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.releases_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.releases_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_releases(self):
         """Load releases in background."""
@@ -327,6 +335,7 @@ class ViewReleaseDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.download_btn.Bind(wx.EVT_BUTTON, self.on_download)
         self.download_all_btn.Bind(wx.EVT_BUTTON, self.on_download_all)
         self.copy_url_btn.Bind(wx.EVT_BUTTON, self.on_copy_url)
@@ -335,6 +344,13 @@ class ViewReleaseDialog(wx.Dialog):
         self.assets_list.Bind(wx.EVT_LISTBOX, self.on_asset_selection)
         self.assets_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_download)
         self.assets_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def on_asset_selection(self, event):
         """Handle asset selection change."""

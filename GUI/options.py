@@ -161,6 +161,7 @@ class OptionsDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.ok_btn.Bind(wx.EVT_BUTTON, self.on_ok)
         self.cancel_btn.Bind(wx.EVT_BUTTON, self.on_cancel)
         self.apply_btn.Bind(wx.EVT_BUTTON, self.on_apply)
@@ -169,6 +170,13 @@ class OptionsDialog(wx.Dialog):
 
         if HOTKEY_SUPPORTED:
             self.clear_hotkey_btn.Bind(wx.EVT_BUTTON, self.on_clear_hotkey)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
 
     def load_settings(self):
         """Load current settings into the dialog."""
