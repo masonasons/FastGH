@@ -401,28 +401,31 @@ class ViewWorkflowRunDialog(wx.Dialog):
         self.steps_list = wx.ListBox(self.panel, style=wx.LB_SINGLE)
         main_sizer.Add(self.steps_list, 1, wx.EXPAND | wx.ALL, 10)
 
-        # Buttons
-        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        # Buttons row 1
+        btn_sizer1 = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.view_logs_btn = wx.Button(self.panel, label="View &Logs")
+        btn_sizer1.Add(self.view_logs_btn, 0, wx.RIGHT, 5)
 
         self.rerun_btn = wx.Button(self.panel, label="Re-r&un All")
-        btn_sizer.Add(self.rerun_btn, 0, wx.RIGHT, 5)
+        btn_sizer1.Add(self.rerun_btn, 0, wx.RIGHT, 5)
 
         self.rerun_failed_btn = wx.Button(self.panel, label="Rerun &Failed")
-        btn_sizer.Add(self.rerun_failed_btn, 0, wx.RIGHT, 5)
+        btn_sizer1.Add(self.rerun_failed_btn, 0, wx.RIGHT, 5)
 
         self.cancel_btn = wx.Button(self.panel, label="Ca&ncel")
-        btn_sizer.Add(self.cancel_btn, 0, wx.RIGHT, 5)
+        btn_sizer1.Add(self.cancel_btn, 0, wx.RIGHT, 5)
 
         self.open_browser_btn = wx.Button(self.panel, label="Open in &Browser")
-        btn_sizer.Add(self.open_browser_btn, 0, wx.RIGHT, 5)
+        btn_sizer1.Add(self.open_browser_btn, 0, wx.RIGHT, 5)
 
         self.open_job_btn = wx.Button(self.panel, label="Open &Job in Browser")
-        btn_sizer.Add(self.open_job_btn, 0, wx.RIGHT, 5)
+        btn_sizer1.Add(self.open_job_btn, 0, wx.RIGHT, 5)
 
         self.close_btn = wx.Button(self.panel, wx.ID_CLOSE, label="Cl&ose")
-        btn_sizer.Add(self.close_btn, 0)
+        btn_sizer1.Add(self.close_btn, 0)
 
-        main_sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+        main_sizer.Add(btn_sizer1, 0, wx.ALL | wx.ALIGN_CENTER, 10)
 
         self.panel.SetSizer(main_sizer)
         self.update_buttons()
@@ -493,9 +496,10 @@ class ViewWorkflowRunDialog(wx.Dialog):
         can_cancel = r.status in ("in_progress", "queued")
         self.cancel_btn.Enable(can_cancel)
 
-        # Open job button
+        # Job-specific buttons
         job = self.get_selected_job()
         self.open_job_btn.Enable(job is not None)
+        self.view_logs_btn.Enable(job is not None)
 
     def get_selected_job(self) -> WorkflowJob | None:
         """Get the currently selected job."""
@@ -507,6 +511,7 @@ class ViewWorkflowRunDialog(wx.Dialog):
     def bind_events(self):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.view_logs_btn.Bind(wx.EVT_BUTTON, self.on_view_logs)
         self.rerun_btn.Bind(wx.EVT_BUTTON, self.on_rerun)
         self.rerun_failed_btn.Bind(wx.EVT_BUTTON, self.on_rerun_failed)
         self.cancel_btn.Bind(wx.EVT_BUTTON, self.on_cancel)
@@ -514,6 +519,7 @@ class ViewWorkflowRunDialog(wx.Dialog):
         self.open_job_btn.Bind(wx.EVT_BUTTON, self.on_open_job)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
         self.jobs_list.Bind(wx.EVT_LISTBOX, self.on_job_selection_change)
+        self.jobs_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view_logs)
 
     def on_job_selection_change(self, event):
         """Handle job selection change - show steps."""
@@ -624,6 +630,128 @@ class ViewWorkflowRunDialog(wx.Dialog):
         job = self.get_selected_job()
         if job:
             webbrowser.open(job.html_url)
+
+    def on_view_logs(self, event):
+        """View logs for the selected job."""
+        job = self.get_selected_job()
+        if job:
+            dlg = JobLogsDialog(self, self.repo, job)
+            dlg.ShowModal()
+            dlg.Destroy()
+
+    def on_close(self, event):
+        """Close dialog."""
+        self.EndModal(wx.ID_CLOSE)
+
+
+class JobLogsDialog(wx.Dialog):
+    """Dialog for viewing job logs."""
+
+    def __init__(self, parent, repo: Repository, job: WorkflowJob):
+        self.repo = repo
+        self.job = job
+        self.app = get_app()
+        self.account = self.app.currentAccount
+
+        title = f"Logs - {job.name}"
+        wx.Dialog.__init__(self, parent, title=title, size=(1000, 700))
+
+        self.init_ui()
+        self.bind_events()
+        theme.apply_theme(self)
+
+        # Load logs
+        self.load_logs()
+
+    def init_ui(self):
+        """Initialize the UI."""
+        self.panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Job info
+        info_label = wx.StaticText(self.panel, label=f"Job: {self.job.name} ({self.job.get_status_text()})")
+        main_sizer.Add(info_label, 0, wx.ALL, 10)
+
+        # Logs text
+        logs_label = wx.StaticText(self.panel, label="&Logs:")
+        main_sizer.Add(logs_label, 0, wx.LEFT, 10)
+
+        self.logs_text = wx.TextCtrl(
+            self.panel,
+            style=wx.TE_READONLY | wx.TE_MULTILINE | wx.HSCROLL,
+            size=(950, 550)
+        )
+        # Use monospace font for logs
+        font = wx.Font(9, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+        self.logs_text.SetFont(font)
+        self.logs_text.SetValue("Loading logs...")
+        main_sizer.Add(self.logs_text, 1, wx.EXPAND | wx.ALL, 10)
+
+        # Buttons
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.refresh_btn = wx.Button(self.panel, label="&Refresh")
+        btn_sizer.Add(self.refresh_btn, 0, wx.RIGHT, 5)
+
+        self.copy_btn = wx.Button(self.panel, label="&Copy All")
+        btn_sizer.Add(self.copy_btn, 0, wx.RIGHT, 5)
+
+        self.open_browser_btn = wx.Button(self.panel, label="Open in &Browser")
+        btn_sizer.Add(self.open_browser_btn, 0, wx.RIGHT, 5)
+
+        self.close_btn = wx.Button(self.panel, wx.ID_CLOSE, label="Cl&ose")
+        btn_sizer.Add(self.close_btn, 0)
+
+        main_sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+
+        self.panel.SetSizer(main_sizer)
+
+    def bind_events(self):
+        """Bind event handlers."""
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
+        self.copy_btn.Bind(wx.EVT_BUTTON, self.on_copy)
+        self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
+        self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+
+    def load_logs(self):
+        """Load job logs in background."""
+        self.logs_text.SetValue("Loading logs...")
+
+        def do_load():
+            logs = self.account.get_job_logs(self.repo.owner, self.repo.name, self.job.id)
+            wx.CallAfter(self.update_logs, logs)
+
+        threading.Thread(target=do_load, daemon=True).start()
+
+    def update_logs(self, logs: str | None):
+        """Update the logs text."""
+        try:
+            if logs:
+                # Clean up ANSI escape codes for better readability
+                import re
+                logs = re.sub(r'\x1b\[[0-9;]*m', '', logs)
+                self.logs_text.SetValue(logs)
+            else:
+                self.logs_text.SetValue("No logs available.\n\nLogs may not be available if:\n- The job hasn't started yet\n- The job is still in progress\n- The logs have expired")
+        except RuntimeError:
+            pass  # Dialog was destroyed
+
+    def on_refresh(self, event):
+        """Refresh logs."""
+        self.load_logs()
+
+    def on_copy(self, event):
+        """Copy all logs to clipboard."""
+        logs = self.logs_text.GetValue()
+        if logs and wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(logs))
+            wx.TheClipboard.Close()
+            wx.MessageBox("Logs copied to clipboard.", "Copied", wx.OK | wx.ICON_INFORMATION)
+
+    def on_open_browser(self, event):
+        """Open job in browser."""
+        webbrowser.open(self.job.html_url)
 
     def on_close(self, event):
         """Close dialog."""

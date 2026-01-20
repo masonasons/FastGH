@@ -435,19 +435,20 @@ class MainGui(wx.Frame):
         def fetch_and_show():
             pr = self.app.currentAccount.get_pull_request(owner, repo_name, number)
             repo = self.app.currentAccount.get_repo(owner, repo_name)
+            can_merge = self.app.currentAccount.can_merge(owner, repo_name) if pr and repo else False
             if pr and repo:
-                wx.CallAfter(self._show_pr_dialog, repo, pr)
+                wx.CallAfter(self._show_pr_dialog, repo, pr, can_merge)
             else:
                 wx.CallAfter(wx.MessageBox, f"Could not load PR #{number}", "Error", wx.OK | wx.ICON_ERROR)
 
         self.status_bar.SetStatusText(f"Loading PR #{number}...")
         threading.Thread(target=fetch_and_show, daemon=True).start()
 
-    def _show_pr_dialog(self, repo, pr):
+    def _show_pr_dialog(self, repo, pr, can_merge):
         """Show the PR dialog."""
         self.status_bar.SetStatusText("Ready")
         from GUI.pullrequests import ViewPullRequestDialog
-        dlg = ViewPullRequestDialog(self, repo, pr)
+        dlg = ViewPullRequestDialog(self, repo, pr, can_merge)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -712,15 +713,16 @@ class MainGui(wx.Frame):
         """Get the currently selected repository."""
         page = self.notebook.GetSelection()
 
-        if page == 0:
+        # Tab indices: 0=Feed, 1=Repos, 2=Starred, 3=Watched, 4=Following, 5=Notifications
+        if page == 1:
             selection = self.repos_list.GetSelection()
             if selection != wx.NOT_FOUND and selection < len(self.repos):
                 return self.repos[selection]
-        elif page == 1:
+        elif page == 2:
             selection = self.starred_list.GetSelection()
             if selection != wx.NOT_FOUND and selection < len(self.starred):
                 return self.starred[selection]
-        elif page == 2:
+        elif page == 3:
             selection = self.watched_list.GetSelection()
             if selection != wx.NOT_FOUND and selection < len(self.watched):
                 return self.watched[selection]

@@ -337,10 +337,15 @@ class UserProfileDialog(wx.Dialog):
     def update_follow_status(self, is_following: bool):
         """Update follow button based on status."""
         self.is_following = is_following
-        if is_following:
-            self.follow_btn.SetLabel("&Unfollow")
-        else:
-            self.follow_btn.SetLabel("&Follow")
+        # Check if dialog/button still exists (may be destroyed if closed quickly)
+        try:
+            if self.follow_btn:
+                if is_following:
+                    self.follow_btn.SetLabel("&Unfollow")
+                else:
+                    self.follow_btn.SetLabel("&Follow")
+        except RuntimeError:
+            pass  # Button was destroyed
 
     def update_user(self, user: UserProfile | None):
         """Update user info."""

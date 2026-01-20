@@ -1150,6 +1150,38 @@ class GitHubAccount:
         )
         return response.status_code == 202
 
+    def get_workflow_run_logs_url(self, owner: str, repo: str, run_id: int) -> str | None:
+        """Get the download URL for workflow run logs.
+
+        Returns a URL that can be used to download a zip file of the logs.
+        """
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
+            allow_redirects=False
+        )
+
+        if response.status_code == 302:
+            return response.headers.get("Location")
+        return None
+
+    def get_job_logs(self, owner: str, repo: str, job_id: int) -> str | None:
+        """Get the logs for a specific job as plain text."""
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+            headers={"Accept": "application/vnd.github.v3+json"}
+        )
+
+        if response.status_code == 200:
+            return response.text
+        elif response.status_code == 302:
+            # Follow redirect to get actual logs
+            log_url = response.headers.get("Location")
+            if log_url:
+                log_response = self._session.get(log_url)
+                if log_response.status_code == 200:
+                    return log_response.text
+        return None
+
     # ============ Releases API ============
 
     def get_releases(self, owner: str, repo: str, per_page: int = 30) -> list[Release]:

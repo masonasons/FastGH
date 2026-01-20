@@ -155,15 +155,19 @@ class ViewRepoDialog(wx.Dialog):
         self.is_starred = is_starred
         self.is_watched = is_watched
 
-        if is_starred:
-            self.star_btn.SetLabel("Un&star")
-        else:
-            self.star_btn.SetLabel("&Star")
+        # Check if dialog/buttons still exist (may be destroyed if closed quickly)
+        try:
+            if is_starred:
+                self.star_btn.SetLabel("Un&star")
+            else:
+                self.star_btn.SetLabel("&Star")
 
-        if is_watched:
-            self.watch_btn.SetLabel("Un&watch")
-        else:
-            self.watch_btn.SetLabel("&Watch")
+            if is_watched:
+                self.watch_btn.SetLabel("Un&watch")
+            else:
+                self.watch_btn.SetLabel("&Watch")
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def on_toggle_star(self, event):
         """Star or unstar the repository."""
