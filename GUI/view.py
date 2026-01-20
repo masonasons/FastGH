@@ -179,6 +179,8 @@ class ViewRepoDialog(wx.Dialog):
     def get_repo_path(self):
         """Get the local path for this repository."""
         git_path = self.app.prefs.git_path
+        if self.app.prefs.git_use_org_structure:
+            return os.path.join(git_path, self.repo.owner, self.repo.name)
         return os.path.join(git_path, self.repo.name)
 
     def repo_exists_locally(self):
@@ -293,6 +295,23 @@ class ViewRepoDialog(wx.Dialog):
         """Clone the repository."""
         git_path = self.app.prefs.git_path
         clone_url = f"https://github.com/{self.repo.full_name}.git"
+        use_org_structure = self.app.prefs.git_use_org_structure
+        use_recursive = self.app.prefs.git_clone_recursive
+
+        # If using org structure, create owner directory and clone into it
+        if use_org_structure:
+            clone_dir = os.path.join(git_path, self.repo.owner)
+            try:
+                os.makedirs(clone_dir, exist_ok=True)
+            except OSError as e:
+                wx.MessageBox(
+                    f"Failed to create directory: {clone_dir}\n\n{e}",
+                    "Error",
+                    wx.OK | wx.ICON_ERROR
+                )
+                return
+        else:
+            clone_dir = git_path
 
         # Disable button during operation
         self.git_btn.Disable()
@@ -300,9 +319,14 @@ class ViewRepoDialog(wx.Dialog):
 
         def do_clone():
             try:
+                cmd = ["git", "clone"]
+                if use_recursive:
+                    cmd.append("--recursive")
+                cmd.append(clone_url)
+
                 result = subprocess.run(
-                    ["git", "clone", clone_url],
-                    cwd=git_path,
+                    cmd,
+                    cwd=clone_dir,
                     capture_output=True,
                     text=True,
                     creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0

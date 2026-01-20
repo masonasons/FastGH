@@ -24,7 +24,7 @@ class OptionsDialog(wx.Dialog):
         self.app = get_app()
         self.parent_window = parent
 
-        wx.Dialog.__init__(self, parent, title="Options", size=(500, 620))
+        wx.Dialog.__init__(self, parent, title="Options", size=(500, 680))
 
         self.init_ui()
         self.bind_events()
@@ -102,6 +102,26 @@ class OptionsDialog(wx.Dialog):
         git_row.Add(self.git_browse_btn, 0)
 
         git_sizer.Add(git_row, 0, wx.ALL | wx.EXPAND, 10)
+
+        # Git clone options
+        self.git_org_structure_cb = wx.CheckBox(
+            self.panel,
+            label="Clone into &owner/repo folder structure"
+        )
+        self.git_org_structure_cb.SetToolTip(
+            "When enabled, repositories are cloned to owner/repo\n"
+            "(e.g., masonasons/FastGH instead of just FastGH)"
+        )
+        git_sizer.Add(self.git_org_structure_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        self.git_recursive_cb = wx.CheckBox(
+            self.panel,
+            label="Clone rec&ursively (include submodules)"
+        )
+        self.git_recursive_cb.SetToolTip(
+            "When enabled, git clone will use --recursive to also clone submodules"
+        )
+        git_sizer.Add(self.git_recursive_cb, 0, wx.LEFT | wx.BOTTOM, 10)
 
         main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
@@ -248,6 +268,8 @@ class OptionsDialog(wx.Dialog):
         self.limit_spin.SetValue(self.app.prefs.commit_limit)
         self.download_path.SetValue(self.app.prefs.download_location)
         self.git_path.SetValue(self.app.prefs.git_path)
+        self.git_org_structure_cb.SetValue(self.app.prefs.git_use_org_structure)
+        self.git_recursive_cb.SetValue(self.app.prefs.git_clone_recursive)
 
         # Notification settings
         self.notify_activity_cb.SetValue(self.app.prefs.notify_activity)
@@ -275,6 +297,8 @@ class OptionsDialog(wx.Dialog):
         self.app.prefs.commit_limit = self.limit_spin.GetValue()
         self.app.prefs.download_location = self.download_path.GetValue()
         self.app.prefs.git_path = self.git_path.GetValue()
+        self.app.prefs.git_use_org_structure = self.git_org_structure_cb.GetValue()
+        self.app.prefs.git_clone_recursive = self.git_recursive_cb.GetValue()
 
         # Save notification settings
         self.app.prefs.notify_activity = self.notify_activity_cb.GetValue()

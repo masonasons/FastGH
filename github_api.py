@@ -35,6 +35,88 @@ def _exit_app():
     raise AccountSetupCancelled()
 
 
+class _AuthWaitDialog(wx.Dialog):
+    """Custom dialog for waiting during OAuth authorization."""
+
+    def __init__(self, parent, user_code, verification_uri, expires_in):
+        super().__init__(parent, title="Waiting for Authorization", size=(450, 200))
+        self.user_code = user_code
+        self.verification_uri = verification_uri
+        self.cancelled = False
+        self.error = None
+
+        panel = wx.Panel(self)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Status message
+        self.status_label = wx.StaticText(
+            panel,
+            label=f"Please enter the code on GitHub and authorize the app.\n\n"
+                  f"Code: {user_code}\n"
+                  f"URL: {verification_uri}"
+        )
+        sizer.Add(self.status_label, 0, wx.ALL | wx.EXPAND, 15)
+
+        # Buttons
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.copy_btn = wx.Button(panel, label="&Copy Code")
+        self.copy_btn.Bind(wx.EVT_BUTTON, self.on_copy_code)
+        btn_sizer.Add(self.copy_btn, 0, wx.RIGHT, 10)
+
+        self.cancel_btn = wx.Button(panel, wx.ID_CANCEL, label="&Cancel")
+        self.cancel_btn.Bind(wx.EVT_BUTTON, self.on_cancel)
+        btn_sizer.Add(self.cancel_btn, 0)
+
+        sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+
+        panel.SetSizer(sizer)
+        self.Centre()
+
+    def on_copy_code(self, event):
+        """Copy the code to clipboard."""
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(self.user_code))
+            wx.TheClipboard.Close()
+            wx.MessageBox(
+                f"Code copied: {self.user_code}",
+                "Copied",
+                wx.OK | wx.ICON_INFORMATION
+            )
+
+    def on_cancel(self, event):
+        """Handle cancel button."""
+        self.cancelled = True
+        self.EndModal(wx.ID_CANCEL)
+
+    def on_success(self):
+        """Called when authorization succeeds."""
+        self.EndModal(wx.ID_OK)
+
+    def on_error(self, error_type):
+        """Called when authorization fails."""
+        self.error = error_type
+        if error_type == "expired_token":
+            wx.MessageBox(
+                "Authorization expired. Please try again.",
+                "Authentication Error",
+                wx.OK | wx.ICON_ERROR
+            )
+        elif error_type == "access_denied":
+            wx.MessageBox(
+                "Authorization denied.",
+                "Authentication Error",
+                wx.OK | wx.ICON_ERROR
+            )
+        else:
+            wx.MessageBox(
+                "Authorization timed out. Please try again.",
+                "Authentication Error",
+                wx.OK | wx.ICON_ERROR
+            )
+        self.EndModal(wx.ID_CANCEL)
+
+
 class GitHubAccount:
     """GitHub account wrapper with authentication and API methods."""
 
@@ -108,21 +190,11 @@ class GitHubAccount:
         expires_in = data.get("expires_in", 900)
         interval = data.get("interval", 5)
 
-        # Copy code to clipboard
-        if wx.TheClipboard.Open():
-            wx.TheClipboard.SetData(wx.TextDataObject(user_code))
-            wx.TheClipboard.Close()
-            code_copied = True
-        else:
-            code_copied = False
-
-        # Step 2: Show user the code and open browser
-        copied_msg = " (copied to clipboard)" if code_copied else ""
+        # Step 2: Ask user if ready, then copy code
         result = wx.MessageBox(
-            f"To authorize FastGH:\n\n"
-            f"1. Go to: {verification_uri}\n"
-            f"2. Paste the code: {user_code}{copied_msg}\n\n"
-            f"Click OK to open the browser, then authorize the app.\n"
+            f"To authorize FastGH, you'll need to enter a code on GitHub.\n\n"
+            f"Your code is: {user_code}\n\n"
+            f"Click OK to copy the code to clipboard and open the browser.\n"
             f"Click Cancel to abort.",
             "GitHub Authorization",
             wx.OK | wx.CANCEL | wx.ICON_INFORMATION
@@ -131,78 +203,71 @@ class GitHubAccount:
         if result == wx.CANCEL:
             _exit_app()
 
+        # Copy code to clipboard
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(user_code))
+            wx.TheClipboard.Close()
+            wx.MessageBox(
+                f"Code copied to clipboard!\n\n"
+                f"Paste this code on the GitHub page: {user_code}",
+                "Code Copied",
+                wx.OK | wx.ICON_INFORMATION
+            )
+
         # Open browser
         import webbrowser
         webbrowser.open(verification_uri)
 
-        # Step 3: Poll for access token
-        progress = wx.ProgressDialog(
-            "Waiting for Authorization",
-            f"Please enter code {user_code} at {verification_uri}\n\nWaiting for you to authorize...",
-            maximum=expires_in,
-            style=wx.PD_APP_MODAL | wx.PD_CAN_ABORT | wx.PD_ELAPSED_TIME
-        )
-
+        # Step 3: Poll for access token with custom dialog
+        auth_dialog = _AuthWaitDialog(None, user_code, verification_uri, expires_in)
         start_time = time.time()
         access_token = None
 
-        while time.time() - start_time < expires_in:
-            elapsed = int(time.time() - start_time)
-            cont, _ = progress.Update(elapsed, f"Waiting for authorization... ({elapsed}s)")
-
-            if not cont:
-                progress.Destroy()
-                _exit_app()
-
-            # Poll for token
-            response = requests.post(
-                "https://github.com/login/oauth/access_token",
-                data={
-                    "client_id": GITHUB_CLIENT_ID,
-                    "device_code": device_code,
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-                },
-                headers={"Accept": "application/json"}
-            )
-
-            if response.status_code == 200:
-                token_data = response.json()
-
-                if "access_token" in token_data:
-                    access_token = token_data["access_token"]
+        # Start polling in background
+        def poll_for_token():
+            nonlocal access_token, interval
+            while time.time() - start_time < expires_in:
+                if auth_dialog.cancelled:
                     break
-                elif token_data.get("error") == "authorization_pending":
-                    # Still waiting, continue polling
-                    pass
-                elif token_data.get("error") == "slow_down":
-                    interval += 5
-                elif token_data.get("error") == "expired_token":
-                    progress.Destroy()
-                    wx.MessageBox(
-                        "Authorization expired. Please try again.",
-                        "Authentication Error",
-                        wx.OK | wx.ICON_ERROR
-                    )
-                    _exit_app()
-                elif token_data.get("error") == "access_denied":
-                    progress.Destroy()
-                    wx.MessageBox(
-                        "Authorization denied.",
-                        "Authentication Error",
-                        wx.OK | wx.ICON_ERROR
-                    )
-                    _exit_app()
 
-            time.sleep(interval)
+                response = requests.post(
+                    "https://github.com/login/oauth/access_token",
+                    data={
+                        "client_id": GITHUB_CLIENT_ID,
+                        "device_code": device_code,
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+                    },
+                    headers={"Accept": "application/json"}
+                )
 
-        progress.Destroy()
+                if response.status_code == 200:
+                    token_data = response.json()
 
-        if not access_token:
-            wx.MessageBox(
-                "Authorization timed out. Please try again.",
-                "Authentication Error",
-                wx.OK | wx.ICON_ERROR
-            )
+                    if "access_token" in token_data:
+                        access_token = token_data["access_token"]
+                        wx.CallAfter(auth_dialog.on_success)
+                        return
+                    elif token_data.get("error") == "authorization_pending":
+                        pass
+                    elif token_data.get("error") == "slow_down":
+                        interval += 5
+                    elif token_data.get("error") in ("expired_token", "access_denied"):
+                        wx.CallAfter(auth_dialog.on_error, token_data.get("error"))
+                        return
+
+                time.sleep(interval)
+
+            # Timed out
+            if not access_token and not auth_dialog.cancelled:
+                wx.CallAfter(auth_dialog.on_error, "timeout")
+
+        poll_thread = threading.Thread(target=poll_for_token, daemon=True)
+        poll_thread.start()
+
+        result = auth_dialog.ShowModal()
+        auth_dialog.Destroy()
+
+        if result == wx.ID_CANCEL:
             _exit_app()
 
         # Save the token

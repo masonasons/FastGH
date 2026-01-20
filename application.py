@@ -84,6 +84,10 @@ class Application:
         default_git_path = os.path.join(os.path.expanduser("~"), "git")
         self.prefs.git_path = self.prefs.get("git_path", default_git_path)
 
+        # Git clone options
+        self.prefs.git_use_org_structure = self.prefs.get("git_use_org_structure", False)
+        self.prefs.git_clone_recursive = self.prefs.get("git_clone_recursive", False)
+
         # OS notification settings
         self.prefs.notify_activity = self.prefs.get("notify_activity", False)
         self.prefs.notify_notifications = self.prefs.get("notify_notifications", False)
