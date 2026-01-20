@@ -855,15 +855,98 @@ class MainGui(wx.Frame):
         menu.Destroy()
 
     def on_open_notification(self, event):
-        """Open notification in browser."""
+        """Open notification - show in app if possible, otherwise browser."""
         notification = self.get_selected_notification()
-        if notification:
-            # Mark as read
-            self.app.currentAccount.mark_thread_read(notification.id)
-            # Open in browser
-            webbrowser.open(notification.get_web_url())
-            # Refresh notifications
-            threading.Thread(target=self._load_notifications, daemon=True).start()
+        if not notification:
+            return
+
+        # Mark as read
+        self.app.currentAccount.mark_thread_read(notification.id)
+
+        owner = notification.repository_owner
+        repo_name = notification.repository_name
+        subject_type = notification.subject.type
+        subject_url = notification.subject.url
+
+        # Try to extract number from URL
+        # Format: https://api.github.com/repos/owner/repo/issues/123
+        number = None
+        if subject_url:
+            parts = subject_url.rstrip('/').split('/')
+            if parts:
+                try:
+                    number = int(parts[-1])
+                except ValueError:
+                    pass
+
+        # Handle different notification types
+        if subject_type == "Issue" and number:
+            self._open_notification_issue(owner, repo_name, number)
+        elif subject_type == "PullRequest" and number:
+            self._open_notification_pr(owner, repo_name, number)
+        elif subject_type == "Release":
+            self._open_notification_releases(owner, repo_name)
+        elif subject_type == "Commit":
+            self._open_notification_commits(owner, repo_name)
+        else:
+            # Fallback to browser for unsupported types (Discussion, etc.)
+            url = notification.get_web_url()
+            if url:
+                webbrowser.open(url)
+
+        # Refresh notifications
+        threading.Thread(target=self._load_notifications, daemon=True).start()
+
+    def _open_notification_issue(self, owner: str, repo_name: str, number: int):
+        """Open an issue from notification."""
+        def fetch_and_show():
+            issue = self.app.currentAccount.get_issue(owner, repo_name, number)
+            repo = self.app.currentAccount.get_repo(owner, repo_name)
+            if issue and repo:
+                wx.CallAfter(self._show_issue_dialog, repo, issue)
+            else:
+                wx.CallAfter(wx.MessageBox, f"Could not load issue #{number}", "Error", wx.OK | wx.ICON_ERROR)
+
+        self.status_bar.SetStatusText(f"Loading issue #{number}...")
+        threading.Thread(target=fetch_and_show, daemon=True).start()
+
+    def _open_notification_pr(self, owner: str, repo_name: str, number: int):
+        """Open a pull request from notification."""
+        def fetch_and_show():
+            pr = self.app.currentAccount.get_pull_request(owner, repo_name, number)
+            repo = self.app.currentAccount.get_repo(owner, repo_name)
+            can_merge = self.app.currentAccount.can_merge(owner, repo_name) if pr and repo else False
+            if pr and repo:
+                wx.CallAfter(self._show_pr_dialog, repo, pr, can_merge)
+            else:
+                wx.CallAfter(wx.MessageBox, f"Could not load PR #{number}", "Error", wx.OK | wx.ICON_ERROR)
+
+        self.status_bar.SetStatusText(f"Loading PR #{number}...")
+        threading.Thread(target=fetch_and_show, daemon=True).start()
+
+    def _open_notification_releases(self, owner: str, repo_name: str):
+        """Open releases dialog from notification."""
+        def fetch_and_show():
+            repo = self.app.currentAccount.get_repo(owner, repo_name)
+            if repo:
+                wx.CallAfter(self._show_releases_dialog, repo)
+            else:
+                wx.CallAfter(wx.MessageBox, f"Could not load repository", "Error", wx.OK | wx.ICON_ERROR)
+
+        self.status_bar.SetStatusText(f"Loading {owner}/{repo_name}...")
+        threading.Thread(target=fetch_and_show, daemon=True).start()
+
+    def _open_notification_commits(self, owner: str, repo_name: str):
+        """Open commits dialog from notification."""
+        def fetch_and_show():
+            repo = self.app.currentAccount.get_repo(owner, repo_name)
+            if repo:
+                wx.CallAfter(self._show_commits_dialog, repo)
+            else:
+                wx.CallAfter(wx.MessageBox, f"Could not load repository", "Error", wx.OK | wx.ICON_ERROR)
+
+        self.status_bar.SetStatusText(f"Loading {owner}/{repo_name}...")
+        threading.Thread(target=fetch_and_show, daemon=True).start()
 
     def on_mark_notification_read(self, event):
         """Mark selected notification as read."""
@@ -897,10 +980,9 @@ class MainGui(wx.Frame):
         """View repository for notification."""
         notification = self.get_selected_notification()
         if notification:
-            # Find or fetch the repository
-            from GUI.search import UserProfileDialog
-            # Open in browser for now - could fetch repo details
-            webbrowser.open(f"https://github.com/{notification.repository_full_name}")
+            owner = notification.repository_owner
+            repo_name = notification.repository_name
+            self._open_feed_repo_direct(owner, repo_name)
 
     def on_mark_all_notifications_read(self, event):
         """Mark all notifications as read."""
