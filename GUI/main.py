@@ -146,6 +146,10 @@ class MainGui(wx.Frame):
         # Start auto-refresh timer if enabled
         self.update_auto_refresh_timer()
 
+        # Check for updates on startup if enabled
+        if self.app.prefs.check_for_updates:
+            threading.Thread(target=self.app.cfu, args=[True], daemon=True).start()
+
     def init_ui(self):
         """Initialize the UI components."""
         self.panel = wx.Panel(self)
@@ -284,6 +288,12 @@ class MainGui(wx.Frame):
         m_view_releases = actions_menu.Append(-1, "View Releases\tCtrl+R", "View releases and download artifacts")
         self.Bind(wx.EVT_MENU, self.on_view_releases, m_view_releases)
         menu_bar.Append(actions_menu, "A&ctions")
+
+        # Help menu
+        help_menu = wx.Menu()
+        m_check_updates = help_menu.Append(-1, "Check for &Updates...", "Check for application updates")
+        self.Bind(wx.EVT_MENU, self.on_check_updates, m_check_updates)
+        menu_bar.Append(help_menu, "&Help")
 
         self.SetMenuBar(menu_bar)
 
@@ -1182,6 +1192,10 @@ class MainGui(wx.Frame):
         dlg = OptionsDialog(self)
         dlg.ShowModal()
         dlg.Destroy()
+
+    def on_check_updates(self, event):
+        """Check for application updates."""
+        threading.Thread(target=self.app.cfu, args=[False], daemon=True).start()
 
     def on_refresh(self, event):
         """Refresh all data."""

@@ -24,7 +24,7 @@ class OptionsDialog(wx.Dialog):
         self.app = get_app()
         self.parent_window = parent
 
-        wx.Dialog.__init__(self, parent, title="Options", size=(500, 680))
+        wx.Dialog.__init__(self, parent, title="Options", size=(500, 740))
 
         self.init_ui()
         self.bind_events()
@@ -49,7 +49,7 @@ class OptionsDialog(wx.Dialog):
         self.limit_spin = wx.SpinCtrl(
             self.panel,
             min=0,
-            max=1000,
+            max=5000,
             initial=0,
             style=wx.SP_ARROW_KEYS
         )
@@ -224,6 +224,15 @@ class OptionsDialog(wx.Dialog):
 
         main_sizer.Add(appearance_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
+        # Updates section
+        updates_box = wx.StaticBox(self.panel, label="Updates")
+        updates_sizer = wx.StaticBoxSizer(updates_box, wx.VERTICAL)
+
+        self.check_for_updates_cb = wx.CheckBox(self.panel, label="Check for &updates on startup")
+        updates_sizer.Add(self.check_for_updates_cb, 0, wx.ALL, 10)
+
+        main_sizer.Add(updates_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         # Spacer
         main_sizer.AddStretchSpacer()
 
@@ -291,6 +300,9 @@ class OptionsDialog(wx.Dialog):
             self.dark_mode_choice.SetSelection(2)
         else:
             self.dark_mode_choice.SetSelection(0)
+
+        # Updates setting
+        self.check_for_updates_cb.SetValue(self.app.prefs.check_for_updates)
 
     def save_settings(self):
         """Save settings from the dialog."""
@@ -363,6 +375,9 @@ class OptionsDialog(wx.Dialog):
                 theme.apply_theme(main.window)
                 # Also apply to this dialog
                 theme.apply_theme(self)
+
+        # Save updates setting
+        self.app.prefs.check_for_updates = self.check_for_updates_cb.GetValue()
 
         return True
 
