@@ -786,9 +786,14 @@ class MainGui(wx.Frame):
         # Check for new items and notify
         self._check_and_notify_feed(self.feed)
 
+        # Preserve selection
+        selection = self.feed_list.GetSelection()
         self.feed_list.Clear()
         for event in self.feed:
             self.feed_list.Append(event.format_display())
+        # Restore selection if still valid
+        if selection != wx.NOT_FOUND and selection < self.feed_list.GetCount():
+            self.feed_list.SetSelection(selection)
         self._update_status()
 
     def _load_repos(self):
@@ -817,9 +822,14 @@ class MainGui(wx.Frame):
 
     def _update_repos_list(self):
         """Update repos list on main thread."""
+        # Preserve selection
+        selection = self.repos_list.GetSelection()
         self.repos_list.Clear()
         for repo in self.repos:
             self.repos_list.Append(repo.format_single_line())
+        # Restore selection if still valid
+        if selection != wx.NOT_FOUND and selection < self.repos_list.GetCount():
+            self.repos_list.SetSelection(selection)
         self._update_status()
 
     def _update_starred_list(self):
@@ -827,9 +837,14 @@ class MainGui(wx.Frame):
         # Check for updates and notify
         self._check_and_notify_starred(self.starred)
 
+        # Preserve selection
+        selection = self.starred_list.GetSelection()
         self.starred_list.Clear()
         for repo in self.starred:
             self.starred_list.Append(repo.format_single_line())
+        # Restore selection if still valid
+        if selection != wx.NOT_FOUND and selection < self.starred_list.GetCount():
+            self.starred_list.SetSelection(selection)
         self._update_status()
 
     def _update_watched_list(self):
@@ -837,9 +852,14 @@ class MainGui(wx.Frame):
         # Check for updates and notify
         self._check_and_notify_watched(self.watched)
 
+        # Preserve selection
+        selection = self.watched_list.GetSelection()
         self.watched_list.Clear()
         for repo in self.watched:
             self.watched_list.Append(repo.format_single_line())
+        # Restore selection if still valid
+        if selection != wx.NOT_FOUND and selection < self.watched_list.GetCount():
+            self.watched_list.SetSelection(selection)
         self._update_status()
 
     def _load_following(self):
@@ -852,9 +872,14 @@ class MainGui(wx.Frame):
 
     def _update_following_list(self):
         """Update following list on main thread."""
+        # Preserve selection
+        selection = self.following_list.GetSelection()
         self.following_list.Clear()
         for user in self.following:
             self.following_list.Append(user.format_display())
+        # Restore selection if still valid
+        if selection != wx.NOT_FOUND and selection < self.following_list.GetCount():
+            self.following_list.SetSelection(selection)
         self._update_status()
 
     def _load_notifications(self):
@@ -870,9 +895,14 @@ class MainGui(wx.Frame):
         # Check for new notifications and notify
         self._check_and_notify_notifications(self.notifications)
 
+        # Preserve selection
+        selection = self.notifications_list.GetSelection()
         self.notifications_list.Clear()
         for notification in self.notifications:
             self.notifications_list.Append(notification.format_display())
+        # Restore selection if still valid
+        if selection != wx.NOT_FOUND and selection < self.notifications_list.GetCount():
+            self.notifications_list.SetSelection(selection)
         self._update_status()
 
     def _update_status(self):

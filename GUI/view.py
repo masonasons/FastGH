@@ -6,11 +6,92 @@ import platform
 import threading
 import subprocess
 import os
+import re
 from application import get_app
 from models.repository import Repository
 from . import theme
 
 text_box_size = (700, 150)
+
+
+class GitProgressDialog(wx.Dialog):
+    """Dialog for showing git operation progress."""
+
+    def __init__(self, parent, title, operation):
+        wx.Dialog.__init__(self, parent, title=title, size=(500, 200),
+                          style=wx.DEFAULT_DIALOG_STYLE)
+        self.operation = operation
+        self.process = None
+        self.cancelled = False
+
+        self.init_ui()
+        theme.apply_theme(self)
+
+    def init_ui(self):
+        """Initialize UI."""
+        panel = wx.Panel(self)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Status label
+        self.status_label = wx.StaticText(panel, label=f"Starting {self.operation}...")
+        sizer.Add(self.status_label, 0, wx.ALL | wx.EXPAND, 10)
+
+        # Progress gauge (indeterminate)
+        self.gauge = wx.Gauge(panel, range=100, style=wx.GA_HORIZONTAL)
+        self.gauge.Pulse()
+        sizer.Add(self.gauge, 0, wx.LEFT | wx.RIGHT | wx.EXPAND, 10)
+
+        # Output text
+        self.output_text = wx.TextCtrl(
+            panel,
+            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL,
+            size=(-1, 80)
+        )
+        sizer.Add(self.output_text, 1, wx.ALL | wx.EXPAND, 10)
+
+        # Cancel button
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.cancel_btn = wx.Button(panel, wx.ID_CANCEL, "&Cancel")
+        self.cancel_btn.Bind(wx.EVT_BUTTON, self.on_cancel)
+        btn_sizer.Add(self.cancel_btn, 0, wx.ALL, 5)
+        sizer.Add(btn_sizer, 0, wx.ALIGN_CENTER)
+
+        panel.SetSizer(sizer)
+
+        # Timer for pulsing gauge
+        self.timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_timer, self.timer)
+        self.timer.Start(50)
+
+    def on_timer(self, event):
+        """Pulse the gauge."""
+        if not self.cancelled:
+            self.gauge.Pulse()
+
+    def on_cancel(self, event):
+        """Cancel the operation."""
+        self.cancelled = True
+        if self.process:
+            try:
+                self.process.terminate()
+            except:
+                pass
+        self.EndModal(wx.ID_CANCEL)
+
+    def update_status(self, text):
+        """Update status label."""
+        self.status_label.SetLabel(text)
+
+    def append_output(self, text):
+        """Append text to output."""
+        self.output_text.AppendText(text)
+
+    def finish(self, success, message=""):
+        """Finish the dialog."""
+        self.timer.Stop()
+        if success:
+            self.gauge.SetValue(100)
+        self.EndModal(wx.ID_OK if success else wx.ID_CANCEL)
 
 
 class ViewRepoDialog(wx.Dialog):
@@ -313,100 +394,125 @@ class ViewRepoDialog(wx.Dialog):
         else:
             clone_dir = git_path
 
-        # Disable button during operation
-        self.git_btn.Disable()
-        self.git_btn.SetLabel("Cloning...")
+        # Create progress dialog
+        progress_dlg = GitProgressDialog(self, f"Cloning {self.repo.name}", "clone")
 
-        def do_clone():
+        cmd = ["git", "clone", "--progress"]
+        if use_recursive:
+            cmd.append("--recursive")
+        cmd.append(clone_url)
+
+        self._run_git_with_progress(progress_dlg, cmd, clone_dir, "clone")
+
+    def do_git_pull(self):
+        """Pull the latest changes."""
+        repo_path = self.get_repo_path()
+
+        # Create progress dialog
+        progress_dlg = GitProgressDialog(self, f"Pulling {self.repo.name}", "pull")
+
+        cmd = ["git", "pull", "--progress"]
+
+        self._run_git_with_progress(progress_dlg, cmd, repo_path, "pull")
+
+    def _run_git_with_progress(self, progress_dlg, cmd, cwd, operation):
+        """Run a git command with progress dialog."""
+        success = [False]
+        error_message = [""]
+        final_output = [""]
+
+        def run_git():
             try:
-                cmd = ["git", "clone"]
-                if use_recursive:
-                    cmd.append("--recursive")
-                cmd.append(clone_url)
-
-                result = subprocess.run(
+                creationflags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                process = subprocess.Popen(
                     cmd,
-                    cwd=clone_dir,
-                    capture_output=True,
+                    cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                    creationflags=creationflags
                 )
-                wx.CallAfter(self.on_clone_complete, result.returncode == 0, result.stderr or result.stdout)
+                progress_dlg.process = process
+
+                # Read stderr (where git outputs progress) in real-time
+                output_lines = []
+                while True:
+                    if progress_dlg.cancelled:
+                        process.terminate()
+                        break
+
+                    line = process.stderr.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        output_lines.append(line)
+                        # Update dialog on main thread
+                        wx.CallAfter(progress_dlg.append_output, line)
+                        # Update status with progress info
+                        line_stripped = line.strip()
+                        if line_stripped:
+                            wx.CallAfter(progress_dlg.update_status, line_stripped[:60])
+
+                # Also get stdout
+                stdout, remaining_stderr = process.communicate()
+                if stdout:
+                    output_lines.append(stdout)
+                    wx.CallAfter(progress_dlg.append_output, stdout)
+                if remaining_stderr:
+                    output_lines.append(remaining_stderr)
+                    wx.CallAfter(progress_dlg.append_output, remaining_stderr)
+
+                final_output[0] = "".join(output_lines)
+                success[0] = process.returncode == 0 and not progress_dlg.cancelled
+
+                if not success[0] and not progress_dlg.cancelled:
+                    error_message[0] = final_output[0]
+
             except FileNotFoundError:
-                wx.CallAfter(self.on_clone_complete, False, "Git is not installed or not in PATH.")
+                error_message[0] = "Git is not installed or not in PATH."
             except Exception as e:
-                wx.CallAfter(self.on_clone_complete, False, str(e))
+                error_message[0] = str(e)
 
-        threading.Thread(target=do_clone, daemon=True).start()
+            # Close dialog on main thread
+            wx.CallAfter(progress_dlg.finish, success[0])
 
-    def on_clone_complete(self, success: bool, message: str):
-        """Handle clone completion."""
-        try:
-            self.git_btn.Enable()
-            self.update_git_button()
+        # Start git operation in background
+        threading.Thread(target=run_git, daemon=True).start()
 
-            if success:
+        # Show dialog modally
+        result = progress_dlg.ShowModal()
+        progress_dlg.Destroy()
+
+        # Update button state
+        self.update_git_button()
+
+        # Show result message
+        if progress_dlg.cancelled:
+            wx.MessageBox(
+                f"{operation.capitalize()} was cancelled.",
+                f"{operation.capitalize()} Cancelled",
+                wx.OK | wx.ICON_INFORMATION
+            )
+        elif success[0]:
+            if operation == "clone":
                 wx.MessageBox(
                     f"Successfully cloned {self.repo.full_name} to:\n{self.get_repo_path()}",
                     "Clone Complete",
                     wx.OK | wx.ICON_INFORMATION
                 )
             else:
-                wx.MessageBox(
-                    f"Failed to clone repository:\n\n{message}",
-                    "Clone Failed",
-                    wx.OK | wx.ICON_ERROR
-                )
-        except RuntimeError:
-            pass  # Dialog was destroyed
-
-    def do_git_pull(self):
-        """Pull the latest changes."""
-        repo_path = self.get_repo_path()
-
-        # Disable button during operation
-        self.git_btn.Disable()
-        self.git_btn.SetLabel("Pulling...")
-
-        def do_pull():
-            try:
-                result = subprocess.run(
-                    ["git", "pull"],
-                    cwd=repo_path,
-                    capture_output=True,
-                    text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-                )
-                wx.CallAfter(self.on_pull_complete, result.returncode == 0, result.stdout or result.stderr)
-            except FileNotFoundError:
-                wx.CallAfter(self.on_pull_complete, False, "Git is not installed or not in PATH.")
-            except Exception as e:
-                wx.CallAfter(self.on_pull_complete, False, str(e))
-
-        threading.Thread(target=do_pull, daemon=True).start()
-
-    def on_pull_complete(self, success: bool, message: str):
-        """Handle pull completion."""
-        try:
-            self.git_btn.Enable()
-            self.update_git_button()
-
-            if success:
-                # Clean up the message for display
-                message = message.strip() if message else "Already up to date."
+                message = final_output[0].strip() if final_output[0] else "Already up to date."
                 wx.MessageBox(
                     f"Pull complete:\n\n{message}",
                     "Pull Complete",
                     wx.OK | wx.ICON_INFORMATION
                 )
-            else:
-                wx.MessageBox(
-                    f"Failed to pull:\n\n{message}",
-                    "Pull Failed",
-                    wx.OK | wx.ICON_ERROR
-                )
-        except RuntimeError:
-            pass  # Dialog was destroyed
+        else:
+            wx.MessageBox(
+                f"Failed to {operation}:\n\n{error_message[0]}",
+                f"{operation.capitalize()} Failed",
+                wx.OK | wx.ICON_ERROR
+            )
 
     def on_view_files(self, event):
         """Open file browser dialog."""
