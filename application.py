@@ -80,6 +80,10 @@ class Application:
         # Global hotkey for show/hide window (default Ctrl+Alt+G)
         self.prefs.global_hotkey = self.prefs.get("global_hotkey", "control+alt+g")
 
+        # Git path for cloning repositories (default to user's home directory)
+        default_git_path = os.path.join(os.path.expanduser("~"), "git")
+        self.prefs.git_path = self.prefs.get("git_path", default_git_path)
+
         # Load accounts
         if self.prefs.accounts > 0:
             # First account must be on main thread (handles auth dialogs)

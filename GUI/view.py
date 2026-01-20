@@ -4,6 +4,8 @@ import wx
 import webbrowser
 import platform
 import threading
+import subprocess
+import os
 from application import get_app
 from models.repository import Repository
 from . import theme
@@ -92,7 +94,11 @@ class ViewRepoDialog(wx.Dialog):
         btn_row1.Add(self.copy_url_btn, 0, wx.RIGHT, 5)
 
         self.copy_clone_btn = wx.Button(self.panel, -1, "Copy &Clone URL")
-        btn_row1.Add(self.copy_clone_btn, 0)
+        btn_row1.Add(self.copy_clone_btn, 0, wx.RIGHT, 5)
+
+        # Git button - will show Clone or Pull based on whether repo exists
+        self.git_btn = wx.Button(self.panel, -1, "&Git...")
+        btn_row1.Add(self.git_btn, 0)
 
         self.main_box.Add(btn_row1, 0, wx.ALL | wx.ALIGN_CENTER, 5)
 
@@ -133,6 +139,7 @@ class ViewRepoDialog(wx.Dialog):
         self.open_btn.Bind(wx.EVT_BUTTON, self.on_open)
         self.copy_url_btn.Bind(wx.EVT_BUTTON, self.on_copy_url)
         self.copy_clone_btn.Bind(wx.EVT_BUTTON, self.on_copy_clone)
+        self.git_btn.Bind(wx.EVT_BUTTON, self.on_git)
         self.issues_btn.Bind(wx.EVT_BUTTON, self.on_view_issues)
         self.prs_btn.Bind(wx.EVT_BUTTON, self.on_view_prs)
         self.commits_btn.Bind(wx.EVT_BUTTON, self.on_view_commits)
@@ -149,6 +156,29 @@ class ViewRepoDialog(wx.Dialog):
             wx.CallAfter(self.update_status, is_starred, is_watched)
 
         threading.Thread(target=do_check, daemon=True).start()
+
+        # Check git status
+        self.update_git_button()
+
+    def get_repo_path(self):
+        """Get the local path for this repository."""
+        git_path = self.app.prefs.git_path
+        return os.path.join(git_path, self.repo.name)
+
+    def repo_exists_locally(self):
+        """Check if the repository exists locally."""
+        repo_path = self.get_repo_path()
+        return os.path.isdir(os.path.join(repo_path, ".git"))
+
+    def update_git_button(self):
+        """Update git button label based on whether repo exists."""
+        try:
+            if self.repo_exists_locally():
+                self.git_btn.SetLabel("&Pull")
+            else:
+                self.git_btn.SetLabel("C&lone")
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def update_status(self, is_starred: bool, is_watched: bool):
         """Update button labels based on status."""
@@ -221,6 +251,122 @@ class ViewRepoDialog(wx.Dialog):
             wx.TheClipboard.SetData(wx.TextDataObject(clone_url))
             wx.TheClipboard.Close()
             wx.MessageBox(f"Copied: {clone_url}", "Copied", wx.OK | wx.ICON_INFORMATION)
+
+    def on_git(self, event):
+        """Clone or pull the repository."""
+        git_path = self.app.prefs.git_path
+
+        # Ensure git path exists
+        if not os.path.isdir(git_path):
+            try:
+                os.makedirs(git_path)
+            except OSError as e:
+                wx.MessageBox(
+                    f"Failed to create git path: {git_path}\n\n{e}",
+                    "Error",
+                    wx.OK | wx.ICON_ERROR
+                )
+                return
+
+        if self.repo_exists_locally():
+            self.do_git_pull()
+        else:
+            self.do_git_clone()
+
+    def do_git_clone(self):
+        """Clone the repository."""
+        git_path = self.app.prefs.git_path
+        clone_url = f"https://github.com/{self.repo.full_name}.git"
+
+        # Disable button during operation
+        self.git_btn.Disable()
+        self.git_btn.SetLabel("Cloning...")
+
+        def do_clone():
+            try:
+                result = subprocess.run(
+                    ["git", "clone", clone_url],
+                    cwd=git_path,
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                )
+                wx.CallAfter(self.on_clone_complete, result.returncode == 0, result.stderr or result.stdout)
+            except FileNotFoundError:
+                wx.CallAfter(self.on_clone_complete, False, "Git is not installed or not in PATH.")
+            except Exception as e:
+                wx.CallAfter(self.on_clone_complete, False, str(e))
+
+        threading.Thread(target=do_clone, daemon=True).start()
+
+    def on_clone_complete(self, success: bool, message: str):
+        """Handle clone completion."""
+        try:
+            self.git_btn.Enable()
+            self.update_git_button()
+
+            if success:
+                wx.MessageBox(
+                    f"Successfully cloned {self.repo.full_name} to:\n{self.get_repo_path()}",
+                    "Clone Complete",
+                    wx.OK | wx.ICON_INFORMATION
+                )
+            else:
+                wx.MessageBox(
+                    f"Failed to clone repository:\n\n{message}",
+                    "Clone Failed",
+                    wx.OK | wx.ICON_ERROR
+                )
+        except RuntimeError:
+            pass  # Dialog was destroyed
+
+    def do_git_pull(self):
+        """Pull the latest changes."""
+        repo_path = self.get_repo_path()
+
+        # Disable button during operation
+        self.git_btn.Disable()
+        self.git_btn.SetLabel("Pulling...")
+
+        def do_pull():
+            try:
+                result = subprocess.run(
+                    ["git", "pull"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                )
+                wx.CallAfter(self.on_pull_complete, result.returncode == 0, result.stdout or result.stderr)
+            except FileNotFoundError:
+                wx.CallAfter(self.on_pull_complete, False, "Git is not installed or not in PATH.")
+            except Exception as e:
+                wx.CallAfter(self.on_pull_complete, False, str(e))
+
+        threading.Thread(target=do_pull, daemon=True).start()
+
+    def on_pull_complete(self, success: bool, message: str):
+        """Handle pull completion."""
+        try:
+            self.git_btn.Enable()
+            self.update_git_button()
+
+            if success:
+                # Clean up the message for display
+                message = message.strip() if message else "Already up to date."
+                wx.MessageBox(
+                    f"Pull complete:\n\n{message}",
+                    "Pull Complete",
+                    wx.OK | wx.ICON_INFORMATION
+                )
+            else:
+                wx.MessageBox(
+                    f"Failed to pull:\n\n{message}",
+                    "Pull Failed",
+                    wx.OK | wx.ICON_ERROR
+                )
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def on_view_issues(self, event):
         """Open issues dialog."""

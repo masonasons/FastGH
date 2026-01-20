@@ -267,6 +267,9 @@ class ViewReleaseDialog(wx.Dialog):
         self.download_all_btn = wx.Button(self.panel, label="Download &All Assets")
         btn_sizer.Add(self.download_all_btn, 0, wx.RIGHT, 5)
 
+        self.copy_url_btn = wx.Button(self.panel, label="Copy &URL")
+        btn_sizer.Add(self.copy_url_btn, 0, wx.RIGHT, 5)
+
         self.open_browser_btn = wx.Button(self.panel, label="Open in &Browser")
         btn_sizer.Add(self.open_browser_btn, 0, wx.RIGHT, 5)
 
@@ -311,6 +314,7 @@ class ViewReleaseDialog(wx.Dialog):
         has_selection = self.assets_list.GetSelection() != wx.NOT_FOUND and has_assets
 
         self.download_btn.Enable(has_selection)
+        self.copy_url_btn.Enable(has_selection)
         self.download_all_btn.Enable(has_assets)
 
     def get_selected_asset(self) -> ReleaseAsset | None:
@@ -325,6 +329,7 @@ class ViewReleaseDialog(wx.Dialog):
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.download_btn.Bind(wx.EVT_BUTTON, self.on_download)
         self.download_all_btn.Bind(wx.EVT_BUTTON, self.on_download_all)
+        self.copy_url_btn.Bind(wx.EVT_BUTTON, self.on_copy_url)
         self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
         self.assets_list.Bind(wx.EVT_LISTBOX, self.on_asset_selection)
@@ -478,6 +483,15 @@ class ViewReleaseDialog(wx.Dialog):
                 )
 
         threading.Thread(target=do_download, daemon=True).start()
+
+    def on_copy_url(self, event):
+        """Copy selected asset URL to clipboard."""
+        asset = self.get_selected_asset()
+        if asset:
+            if wx.TheClipboard.Open():
+                wx.TheClipboard.SetData(wx.TextDataObject(asset.browser_download_url))
+                wx.TheClipboard.Close()
+                wx.MessageBox(f"Copied: {asset.browser_download_url}", "Copied", wx.OK | wx.ICON_INFORMATION)
 
     def on_open_browser(self, event):
         """Open release in browser."""

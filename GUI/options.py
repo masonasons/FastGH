@@ -84,6 +84,27 @@ class OptionsDialog(wx.Dialog):
 
         main_sizer.Add(downloads_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
+        # Git section
+        git_box = wx.StaticBox(self.panel, label="Git")
+        git_sizer = wx.StaticBoxSizer(git_box, wx.VERTICAL)
+
+        # Git path row
+        git_row = wx.BoxSizer(wx.HORIZONTAL)
+
+        git_label = wx.StaticText(self.panel, label="&Git repositories path:")
+        git_row.Add(git_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+
+        self.git_path = wx.TextCtrl(self.panel, size=(280, -1))
+        self.git_path.SetToolTip("Folder where repositories will be cloned")
+        git_row.Add(self.git_path, 1, wx.RIGHT, 5)
+
+        self.git_browse_btn = wx.Button(self.panel, label="Br&owse...")
+        git_row.Add(self.git_browse_btn, 0)
+
+        git_sizer.Add(git_row, 0, wx.ALL | wx.EXPAND, 10)
+
+        main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         # Hotkey section (only show if supported)
         if HOTKEY_SUPPORTED:
             hotkey_box = wx.StaticBox(self.panel, label="Global Hotkey")
@@ -144,6 +165,7 @@ class OptionsDialog(wx.Dialog):
         self.cancel_btn.Bind(wx.EVT_BUTTON, self.on_cancel)
         self.apply_btn.Bind(wx.EVT_BUTTON, self.on_apply)
         self.browse_btn.Bind(wx.EVT_BUTTON, self.on_browse)
+        self.git_browse_btn.Bind(wx.EVT_BUTTON, self.on_git_browse)
 
         if HOTKEY_SUPPORTED:
             self.clear_hotkey_btn.Bind(wx.EVT_BUTTON, self.on_clear_hotkey)
@@ -152,6 +174,7 @@ class OptionsDialog(wx.Dialog):
         """Load current settings into the dialog."""
         self.limit_spin.SetValue(self.app.prefs.commit_limit)
         self.download_path.SetValue(self.app.prefs.download_location)
+        self.git_path.SetValue(self.app.prefs.git_path)
 
         if HOTKEY_SUPPORTED:
             self.hotkey_text.SetValue(self.app.prefs.global_hotkey)
@@ -160,6 +183,7 @@ class OptionsDialog(wx.Dialog):
         """Save settings from the dialog."""
         self.app.prefs.commit_limit = self.limit_spin.GetValue()
         self.app.prefs.download_location = self.download_path.GetValue()
+        self.app.prefs.git_path = self.git_path.GetValue()
 
         # Save hotkey if supported
         if HOTKEY_SUPPORTED:
@@ -211,6 +235,24 @@ class OptionsDialog(wx.Dialog):
 
         if dlg.ShowModal() == wx.ID_OK:
             self.download_path.SetValue(dlg.GetPath())
+
+        dlg.Destroy()
+
+    def on_git_browse(self, event):
+        """Browse for git repositories path."""
+        current = self.git_path.GetValue()
+        if not current or not os.path.isdir(current):
+            current = os.path.expanduser("~")
+
+        dlg = wx.DirDialog(
+            self,
+            "Select Git Repositories Path",
+            defaultPath=current,
+            style=wx.DD_DEFAULT_STYLE
+        )
+
+        if dlg.ShowModal() == wx.ID_OK:
+            self.git_path.SetValue(dlg.GetPath())
 
         dlg.Destroy()
 
