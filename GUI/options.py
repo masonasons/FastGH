@@ -24,7 +24,7 @@ class OptionsDialog(wx.Dialog):
         self.app = get_app()
         self.parent_window = parent
 
-        wx.Dialog.__init__(self, parent, title="Options", size=(500, 380))
+        wx.Dialog.__init__(self, parent, title="Options", size=(500, 550))
 
         self.init_ui()
         self.bind_events()
@@ -105,6 +105,46 @@ class OptionsDialog(wx.Dialog):
 
         main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
+        # Notifications section
+        notif_box = wx.StaticBox(self.panel, label="Desktop Notifications")
+        notif_sizer = wx.StaticBoxSizer(notif_box, wx.VERTICAL)
+
+        # Checkboxes for notification types
+        self.notify_activity_cb = wx.CheckBox(self.panel, label="Notify on new &activity feed items")
+        notif_sizer.Add(self.notify_activity_cb, 0, wx.LEFT | wx.TOP, 10)
+
+        self.notify_notifications_cb = wx.CheckBox(self.panel, label="Notify on new GitHub &notifications")
+        notif_sizer.Add(self.notify_notifications_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        self.notify_starred_cb = wx.CheckBox(self.panel, label="Notify on &starred repository updates")
+        notif_sizer.Add(self.notify_starred_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        self.notify_watched_cb = wx.CheckBox(self.panel, label="Notify on &watched repository updates")
+        notif_sizer.Add(self.notify_watched_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        # Auto-refresh interval
+        refresh_row = wx.BoxSizer(wx.HORIZONTAL)
+
+        refresh_label = wx.StaticText(self.panel, label="Auto-&refresh interval:")
+        refresh_row.Add(refresh_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+
+        self.refresh_spin = wx.SpinCtrl(
+            self.panel,
+            min=0,
+            max=60,
+            initial=0,
+            style=wx.SP_ARROW_KEYS
+        )
+        self.refresh_spin.SetToolTip("How often to check for updates (0 = disabled)")
+        refresh_row.Add(self.refresh_spin, 0, wx.RIGHT, 5)
+
+        refresh_hint = wx.StaticText(self.panel, label="minutes (0 = disabled)")
+        refresh_row.Add(refresh_hint, 0, wx.ALIGN_CENTER_VERTICAL)
+
+        notif_sizer.Add(refresh_row, 0, wx.ALL, 10)
+
+        main_sizer.Add(notif_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         # Hotkey section (only show if supported)
         if HOTKEY_SUPPORTED:
             hotkey_box = wx.StaticBox(self.panel, label="Global Hotkey")
@@ -184,6 +224,13 @@ class OptionsDialog(wx.Dialog):
         self.download_path.SetValue(self.app.prefs.download_location)
         self.git_path.SetValue(self.app.prefs.git_path)
 
+        # Notification settings
+        self.notify_activity_cb.SetValue(self.app.prefs.notify_activity)
+        self.notify_notifications_cb.SetValue(self.app.prefs.notify_notifications)
+        self.notify_starred_cb.SetValue(self.app.prefs.notify_starred)
+        self.notify_watched_cb.SetValue(self.app.prefs.notify_watched)
+        self.refresh_spin.SetValue(self.app.prefs.auto_refresh_interval)
+
         if HOTKEY_SUPPORTED:
             self.hotkey_text.SetValue(self.app.prefs.global_hotkey)
 
@@ -192,6 +239,22 @@ class OptionsDialog(wx.Dialog):
         self.app.prefs.commit_limit = self.limit_spin.GetValue()
         self.app.prefs.download_location = self.download_path.GetValue()
         self.app.prefs.git_path = self.git_path.GetValue()
+
+        # Save notification settings
+        self.app.prefs.notify_activity = self.notify_activity_cb.GetValue()
+        self.app.prefs.notify_notifications = self.notify_notifications_cb.GetValue()
+        self.app.prefs.notify_starred = self.notify_starred_cb.GetValue()
+        self.app.prefs.notify_watched = self.notify_watched_cb.GetValue()
+
+        old_interval = self.app.prefs.auto_refresh_interval
+        new_interval = self.refresh_spin.GetValue()
+        self.app.prefs.auto_refresh_interval = new_interval
+
+        # Update auto-refresh timer if interval changed
+        if old_interval != new_interval:
+            from GUI import main
+            if main.window and hasattr(main.window, 'update_auto_refresh_timer'):
+                main.window.update_auto_refresh_timer()
 
         # Save hotkey if supported
         if HOTKEY_SUPPORTED:

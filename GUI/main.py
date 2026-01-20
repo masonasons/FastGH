@@ -119,6 +119,16 @@ class MainGui(wx.Frame):
         self.following = []
         self.notifications = []
 
+        # Last seen item IDs for notifications (set to None initially to skip first load)
+        self._last_feed_ids = None
+        self._last_notification_ids = None
+        self._last_starred_ids = None
+        self._last_watched_ids = None
+
+        # Auto-refresh timer
+        self.auto_refresh_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_auto_refresh, self.auto_refresh_timer)
+
         # Global hotkey handler
         self.keyboard_handler = None
         self.current_hotkey = None
@@ -132,6 +142,9 @@ class MainGui(wx.Frame):
 
         # Load data in background
         self.refresh_all()
+
+        # Start auto-refresh timer if enabled
+        self.update_auto_refresh_timer()
 
     def init_ui(self):
         """Initialize the UI components."""
@@ -611,6 +624,145 @@ class MainGui(wx.Frame):
         threading.Thread(target=self._load_following, daemon=True).start()
         threading.Thread(target=self._load_notifications, daemon=True).start()
 
+    def update_auto_refresh_timer(self):
+        """Start or stop the auto-refresh timer based on settings."""
+        interval = self.app.prefs.auto_refresh_interval
+        if interval > 0:
+            # Convert minutes to milliseconds
+            self.auto_refresh_timer.Start(interval * 60 * 1000)
+        else:
+            self.auto_refresh_timer.Stop()
+
+    def on_auto_refresh(self, event):
+        """Handle auto-refresh timer event."""
+        self.refresh_all()
+
+    def show_notification(self, title: str, message: str):
+        """Show an OS desktop notification."""
+        try:
+            notification = wx.adv.NotificationMessage(title, message, self)
+            notification.SetFlags(wx.ICON_INFORMATION)
+            notification.Show(timeout=5)  # Show for 5 seconds
+        except Exception as e:
+            # Fallback if notifications not supported
+            print(f"Notification error: {e}")
+
+    def _check_and_notify_feed(self, new_feed):
+        """Check for new feed items and notify if enabled."""
+        if not self.app.prefs.notify_activity:
+            return
+
+        # Get current IDs
+        new_ids = {event.id for event in new_feed}
+
+        # Skip first load (no previous data)
+        if self._last_feed_ids is None:
+            self._last_feed_ids = new_ids
+            return
+
+        # Find new items
+        new_item_ids = new_ids - self._last_feed_ids
+        if new_item_ids:
+            count = len(new_item_ids)
+            # Find one of the new events to show
+            new_event = next((e for e in new_feed if e.id in new_item_ids), None)
+            if new_event:
+                title = f"{count} new activity item{'s' if count > 1 else ''}"
+                message = new_event.format_display()[:100]
+                self.show_notification(title, message)
+
+        self._last_feed_ids = new_ids
+
+    def _check_and_notify_notifications(self, new_notifications):
+        """Check for new GitHub notifications and notify if enabled."""
+        if not self.app.prefs.notify_notifications:
+            return
+
+        # Get current unread notification IDs
+        new_ids = {n.id for n in new_notifications if n.unread}
+
+        # Skip first load
+        if self._last_notification_ids is None:
+            self._last_notification_ids = new_ids
+            return
+
+        # Find new unread notifications
+        new_item_ids = new_ids - self._last_notification_ids
+        if new_item_ids:
+            count = len(new_item_ids)
+            new_notif = next((n for n in new_notifications if n.id in new_item_ids), None)
+            if new_notif:
+                title = f"{count} new GitHub notification{'s' if count > 1 else ''}"
+                message = f"{new_notif.subject.title} ({new_notif.repository_full_name})"
+                self.show_notification(title, message)
+
+        self._last_notification_ids = new_ids
+
+    def _check_and_notify_starred(self, new_starred):
+        """Check for starred repo updates and notify if enabled."""
+        if not self.app.prefs.notify_starred:
+            return
+
+        # Get IDs with their update timestamps
+        new_ids = {(r.id, r.updated_at.isoformat() if r.updated_at else "") for r in new_starred}
+        new_id_only = {r.id for r in new_starred}
+
+        # Skip first load
+        if self._last_starred_ids is None:
+            self._last_starred_ids = new_ids
+            return
+
+        old_id_only = {id for id, _ in self._last_starred_ids}
+
+        # Find repos that have new updates (same ID but different timestamp)
+        updated_repos = []
+        for repo in new_starred:
+            repo_key = (repo.id, repo.updated_at.isoformat() if repo.updated_at else "")
+            old_key = next((k for k in self._last_starred_ids if k[0] == repo.id), None)
+            if old_key and old_key != repo_key:
+                updated_repos.append(repo)
+
+        if updated_repos:
+            count = len(updated_repos)
+            title = f"{count} starred repo{'s' if count > 1 else ''} updated"
+            message = updated_repos[0].full_name
+            if count > 1:
+                message += f" and {count - 1} more"
+            self.show_notification(title, message)
+
+        self._last_starred_ids = new_ids
+
+    def _check_and_notify_watched(self, new_watched):
+        """Check for watched repo updates and notify if enabled."""
+        if not self.app.prefs.notify_watched:
+            return
+
+        # Get IDs with their update timestamps
+        new_ids = {(r.id, r.updated_at.isoformat() if r.updated_at else "") for r in new_watched}
+
+        # Skip first load
+        if self._last_watched_ids is None:
+            self._last_watched_ids = new_ids
+            return
+
+        # Find repos that have new updates
+        updated_repos = []
+        for repo in new_watched:
+            repo_key = (repo.id, repo.updated_at.isoformat() if repo.updated_at else "")
+            old_key = next((k for k in self._last_watched_ids if k[0] == repo.id), None)
+            if old_key and old_key != repo_key:
+                updated_repos.append(repo)
+
+        if updated_repos:
+            count = len(updated_repos)
+            title = f"{count} watched repo{'s' if count > 1 else ''} updated"
+            message = updated_repos[0].full_name
+            if count > 1:
+                message += f" and {count - 1} more"
+            self.show_notification(title, message)
+
+        self._last_watched_ids = new_ids
+
     def _load_feed(self):
         """Load activity feed in background."""
         try:
@@ -621,6 +773,9 @@ class MainGui(wx.Frame):
 
     def _update_feed_list(self):
         """Update feed list on main thread."""
+        # Check for new items and notify
+        self._check_and_notify_feed(self.feed)
+
         self.feed_list.Clear()
         for event in self.feed:
             self.feed_list.Append(event.format_display())
@@ -659,6 +814,9 @@ class MainGui(wx.Frame):
 
     def _update_starred_list(self):
         """Update starred list on main thread."""
+        # Check for updates and notify
+        self._check_and_notify_starred(self.starred)
+
         self.starred_list.Clear()
         for repo in self.starred:
             self.starred_list.Append(repo.format_single_line())
@@ -666,6 +824,9 @@ class MainGui(wx.Frame):
 
     def _update_watched_list(self):
         """Update watched list on main thread."""
+        # Check for updates and notify
+        self._check_and_notify_watched(self.watched)
+
         self.watched_list.Clear()
         for repo in self.watched:
             self.watched_list.Append(repo.format_single_line())
@@ -696,6 +857,9 @@ class MainGui(wx.Frame):
 
     def _update_notifications_list(self):
         """Update notifications list on main thread."""
+        # Check for new notifications and notify
+        self._check_and_notify_notifications(self.notifications)
+
         self.notifications_list.Clear()
         for notification in self.notifications:
             self.notifications_list.Append(notification.format_display())

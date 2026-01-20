@@ -84,6 +84,15 @@ class Application:
         default_git_path = os.path.join(os.path.expanduser("~"), "git")
         self.prefs.git_path = self.prefs.get("git_path", default_git_path)
 
+        # OS notification settings
+        self.prefs.notify_activity = self.prefs.get("notify_activity", False)
+        self.prefs.notify_notifications = self.prefs.get("notify_notifications", False)
+        self.prefs.notify_starred = self.prefs.get("notify_starred", False)
+        self.prefs.notify_watched = self.prefs.get("notify_watched", False)
+
+        # Auto-refresh interval in minutes (0 = disabled)
+        self.prefs.auto_refresh_interval = self.prefs.get("auto_refresh_interval", 0)
+
         # Load accounts
         if self.prefs.accounts > 0:
             # First account must be on main thread (handles auth dialogs)
