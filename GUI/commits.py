@@ -120,76 +120,88 @@ class CommitsDialog(wx.Dialog):
 
     def update_branches(self, branches):
         """Update branches dropdown (branches are sorted by last commit date)."""
-        self.branches = branches
-        self.branch_choice.Clear()
+        try:
+            self.branches = branches
+            self.branch_choice.Clear()
 
-        if not branches:
-            self.branch_choice.Append("(no branches)")
-            self.branch_choice.SetSelection(0)
-        else:
-            # Branches are sorted by last updated, but prefer main/master as default
-            default_idx = 0
-            main_idx = None
-            for i, branch in enumerate(branches):
-                name = branch.get('name', '')
-                self.branch_choice.Append(name)
-                if name in ('main', 'master') and main_idx is None:
-                    main_idx = i
+            if not branches:
+                self.branch_choice.Append("(no branches)")
+                self.branch_choice.SetSelection(0)
+            else:
+                # Branches are sorted by last updated, but prefer main/master as default
+                default_idx = 0
+                main_idx = None
+                for i, branch in enumerate(branches):
+                    name = branch.get('name', '')
+                    self.branch_choice.Append(name)
+                    if name in ('main', 'master') and main_idx is None:
+                        main_idx = i
 
-            # Use main/master if found, otherwise use first (most recently updated)
-            if main_idx is not None:
-                default_idx = main_idx
+                # Use main/master if found, otherwise use first (most recently updated)
+                if main_idx is not None:
+                    default_idx = main_idx
 
-            self.branch_choice.SetSelection(default_idx)
-            self.current_branch = branches[default_idx].get('name') if branches else None
+                self.branch_choice.SetSelection(default_idx)
+                self.current_branch = branches[default_idx].get('name') if branches else None
 
-        # Load commits for selected branch
-        self.load_commits()
+            # Load commits for selected branch
+            self.load_commits()
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def load_commits(self):
         """Load commits in background."""
-        self.commits_list.Clear()
-        self.commits_list.Append("Loading...")
-        self.commits = []
-        self.details_text.SetValue("")
-
-        branch = self.branch_choice.GetStringSelection()
-        if not branch or branch == "(no branches)":
+        try:
             self.commits_list.Clear()
-            self.commits_list.Append("No branch selected")
-            return
+            self.commits_list.Append("Loading...")
+            self.commits = []
+            self.details_text.SetValue("")
 
-        def do_load():
-            max_commits = self.app.prefs.get("commit_limit", 0)
-            commits = self.account.get_commits(self.owner, self.repo_name, sha=branch, max_commits=max_commits)
-            wx.CallAfter(self.update_list, commits)
+            branch = self.branch_choice.GetStringSelection()
+            if not branch or branch == "(no branches)":
+                self.commits_list.Clear()
+                self.commits_list.Append("No branch selected")
+                return
 
-        threading.Thread(target=do_load, daemon=True).start()
+            def do_load():
+                max_commits = self.app.prefs.commit_limit
+                commits = self.account.get_commits(self.owner, self.repo_name, sha=branch, max_commits=max_commits)
+                wx.CallAfter(self.update_list, commits)
+
+            threading.Thread(target=do_load, daemon=True).start()
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def update_list(self, commits):
         """Update the commits list."""
-        self.commits = commits
-        self.commits_list.Clear()
+        try:
+            self.commits = commits
+            self.commits_list.Clear()
 
-        if not commits:
-            self.commits_list.Append("No commits found")
-        else:
-            for commit in commits:
-                self.commits_list.Append(commit.format_display())
+            if not commits:
+                self.commits_list.Append("No commits found")
+            else:
+                for commit in commits:
+                    self.commits_list.Append(commit.format_display())
 
-        # Focus on commits list
-        self.commits_list.SetFocus()
+            # Focus on commits list
+            self.commits_list.SetFocus()
 
-        self.update_buttons()
+            self.update_buttons()
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def update_buttons(self):
         """Update button states based on selection."""
-        commit = self.get_selected_commit()
-        has_selection = commit is not None
+        try:
+            commit = self.get_selected_commit()
+            has_selection = commit is not None
 
-        self.view_btn.Enable(has_selection)
-        self.copy_sha_btn.Enable(has_selection)
-        self.open_browser_btn.Enable(has_selection)
+            self.view_btn.Enable(has_selection)
+            self.copy_sha_btn.Enable(has_selection)
+            self.open_browser_btn.Enable(has_selection)
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def get_selected_commit(self) -> Commit | None:
         """Get the currently selected commit."""
