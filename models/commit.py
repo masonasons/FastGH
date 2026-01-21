@@ -135,7 +135,11 @@ class Commit:
     def format_display(self) -> str:
         """Format commit for list display."""
         author_name = self.github_author.login if self.github_author else self.author.name
-        date_str = self._format_relative_time(self.author.date) if self.author.date else "Unknown"
+        if self.author.date:
+            local_time = self.author.date.astimezone() if self.author.date.tzinfo else self.author.date
+            date_str = local_time.strftime("%Y-%m-%d %H:%M")
+        else:
+            date_str = "Unknown"
         return f"{self.first_line} - {author_name}, {date_str} [{self.short_sha}]"
 
     def _format_relative_time(self, dt: datetime) -> str:
