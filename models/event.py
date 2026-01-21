@@ -234,13 +234,16 @@ class Event:
 
     def format_display(self) -> str:
         """Format for list display."""
-        action = self.get_action_description()
-        if self.created_at:
-            local_time = self.created_at.astimezone() if self.created_at.tzinfo else self.created_at
-            time_str = local_time.strftime("%Y-%m-%d %H:%M")
-        else:
-            time_str = "Unknown"
-        return f"{self.actor.login} {action} in {self.repo.name} - {time_str}"
+        try:
+            action = self.get_action_description()
+            if self.created_at:
+                local_time = self.created_at.astimezone() if self.created_at.tzinfo else self.created_at
+                time_str = local_time.strftime("%Y-%m-%d %H:%M")
+            else:
+                time_str = "Unknown"
+            return f"{self.actor.login} {action} in {self.repo.name} - {time_str}"
+        except Exception:
+            return f"{self.actor.login} - {self.repo.name}"
 
     def get_web_url(self) -> str:
         """Get the web URL for this event."""

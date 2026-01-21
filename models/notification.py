@@ -117,14 +117,17 @@ class Notification:
 
     def format_display(self) -> str:
         """Format for list display."""
-        unread_marker = "● " if self.unread else "○ "
-        type_icon = self._get_type_icon()
-        if self.updated_at:
-            local_time = self.updated_at.astimezone() if self.updated_at.tzinfo else self.updated_at
-            time_str = local_time.strftime("%Y-%m-%d %H:%M")
-        else:
-            time_str = "Unknown"
-        return f"{unread_marker}[{type_icon}] {self.subject.title} - {self.repository_full_name} ({self.get_reason_display()}) - {time_str}"
+        try:
+            unread_marker = "● " if self.unread else "○ "
+            type_icon = self._get_type_icon()
+            if self.updated_at:
+                local_time = self.updated_at.astimezone() if self.updated_at.tzinfo else self.updated_at
+                time_str = local_time.strftime("%Y-%m-%d %H:%M")
+            else:
+                time_str = "Unknown"
+            return f"{unread_marker}[{type_icon}] {self.subject.title} - {self.repository_full_name} ({self.get_reason_display()}) - {time_str}"
+        except Exception:
+            return f"{self.subject.title} - {self.repository_full_name}"
 
     def _get_type_icon(self) -> str:
         """Get icon/label for subject type."""

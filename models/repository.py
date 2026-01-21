@@ -74,13 +74,16 @@ class Repository:
 
     def format_single_line(self) -> str:
         """Format repository for single-line display."""
-        lang = self.language or "Unknown"
-        if self.pushed_at:
-            local_time = self.pushed_at.astimezone() if self.pushed_at.tzinfo else self.pushed_at
-            pushed = local_time.strftime("%Y-%m-%d %H:%M")
-        else:
-            pushed = "Unknown"
-        return f"{self.full_name} | {self.stars} stars | {lang} | Pushed {pushed}"
+        try:
+            lang = self.language or "Unknown"
+            if self.pushed_at:
+                local_time = self.pushed_at.astimezone() if self.pushed_at.tzinfo else self.pushed_at
+                pushed = local_time.strftime("%Y-%m-%d %H:%M")
+            else:
+                pushed = "Unknown"
+            return f"{self.full_name} | {self.stars} stars | {lang} | Pushed {pushed}"
+        except Exception:
+            return self.full_name
 
     def _format_relative_time(self) -> str:
         """Format pushed_at as relative time."""
