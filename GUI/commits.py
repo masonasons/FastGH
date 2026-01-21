@@ -10,6 +10,9 @@ from models.commit import Commit
 from . import theme
 
 
+MAX_BRANCHES_DISPLAY = 50
+
+
 class CommitsDialog(wx.Dialog):
     """Dialog for viewing repository commits."""
 
@@ -20,7 +23,8 @@ class CommitsDialog(wx.Dialog):
         self.owner = repo.owner
         self.repo_name = repo.name
         self.commits = []
-        self.branches = []
+        self.all_branches = []  # All branches from API
+        self.filtered_branches = []  # Currently displayed branches
         self.current_branch = None
 
         title = f"Commits - {repo.full_name}"
@@ -38,8 +42,18 @@ class CommitsDialog(wx.Dialog):
         self.panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Branch selection
+        # Branch selection row
         branch_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        # Branch search
+        search_label = wx.StaticText(self.panel, label="&Filter:")
+        branch_sizer.Add(search_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+
+        self.branch_search = wx.TextCtrl(self.panel, size=(150, -1))
+        self.branch_search.SetHint("Search branches...")
+        branch_sizer.Add(self.branch_search, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+
+        # Branch dropdown
         branch_label = wx.StaticText(self.panel, label="&Branch:")
         branch_sizer.Add(branch_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
 
@@ -93,6 +107,7 @@ class CommitsDialog(wx.Dialog):
         """Bind event handlers."""
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
+        self.branch_search.Bind(wx.EVT_TEXT, self.on_branch_search)
         self.branch_choice.Bind(wx.EVT_CHOICE, self.on_branch_change)
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
         self.view_btn.Bind(wx.EVT_BUTTON, self.on_view)
@@ -121,31 +136,65 @@ class CommitsDialog(wx.Dialog):
     def update_branches(self, branches):
         """Update branches dropdown (branches are sorted by last commit date)."""
         try:
-            self.branches = branches
-            self.branch_choice.Clear()
-
-            if not branches:
-                self.branch_choice.Append("(no branches)")
-                self.branch_choice.SetSelection(0)
-            else:
-                # Branches are sorted by last updated, but prefer main/master as default
-                default_idx = 0
-                main_idx = None
-                for i, branch in enumerate(branches):
-                    name = branch.get('name', '')
-                    self.branch_choice.Append(name)
-                    if name in ('main', 'master') and main_idx is None:
-                        main_idx = i
-
-                # Use main/master if found, otherwise use first (most recently updated)
-                if main_idx is not None:
-                    default_idx = main_idx
-
-                self.branch_choice.SetSelection(default_idx)
-                self.current_branch = branches[default_idx].get('name') if branches else None
+            self.all_branches = branches or []
+            self._populate_branch_choice()
 
             # Load commits for selected branch
             self.load_commits()
+        except RuntimeError:
+            pass  # Dialog was destroyed
+
+    def _populate_branch_choice(self, filter_text=""):
+        """Populate branch dropdown with filtered branches."""
+        self.branch_choice.Clear()
+        filter_text = filter_text.lower().strip()
+
+        if not self.all_branches:
+            self.branch_choice.Append("(no branches)")
+            self.branch_choice.SetSelection(0)
+            self.filtered_branches = []
+            return
+
+        # Filter branches by search text
+        if filter_text:
+            matching = [b for b in self.all_branches if filter_text in b.get('name', '').lower()]
+        else:
+            matching = self.all_branches
+
+        # Limit to MAX_BRANCHES_DISPLAY
+        self.filtered_branches = matching[:MAX_BRANCHES_DISPLAY]
+
+        if not self.filtered_branches:
+            self.branch_choice.Append("(no matching branches)")
+            self.branch_choice.SetSelection(0)
+            return
+
+        # Add branches to dropdown
+        default_idx = 0
+        main_idx = None
+        for i, branch in enumerate(self.filtered_branches):
+            name = branch.get('name', '')
+            self.branch_choice.Append(name)
+            if name in ('main', 'master') and main_idx is None:
+                main_idx = i
+
+        # Show count info if truncated
+        total_matching = len(matching)
+        if total_matching > MAX_BRANCHES_DISPLAY:
+            self.branch_choice.Append(f"... and {total_matching - MAX_BRANCHES_DISPLAY} more (use filter)")
+
+        # Use main/master if found (and no filter), otherwise use first
+        if main_idx is not None and not filter_text:
+            default_idx = main_idx
+
+        self.branch_choice.SetSelection(default_idx)
+        self.current_branch = self.filtered_branches[default_idx].get('name') if self.filtered_branches else None
+
+    def on_branch_search(self, event):
+        """Handle branch search text change."""
+        try:
+            filter_text = self.branch_search.GetValue()
+            self._populate_branch_choice(filter_text)
         except RuntimeError:
             pass  # Dialog was destroyed
 
