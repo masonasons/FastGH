@@ -26,6 +26,7 @@ class CommitsDialog(wx.Dialog):
         self.all_branches = []  # All branches from API
         self.filtered_branches = []  # Currently displayed branches
         self.current_branch = None
+        self.initial_load = True  # Track first load for focus
 
         title = f"Commits - {repo.full_name}"
         wx.Dialog.__init__(self, parent, title=title, size=(900, 600))
@@ -233,8 +234,10 @@ class CommitsDialog(wx.Dialog):
                 for commit in commits:
                     self.commits_list.Append(commit.format_display())
 
-            # Focus on commits list
-            self.commits_list.SetFocus()
+            # Focus on commits list only on initial load
+            if self.initial_load:
+                self.commits_list.SetFocus()
+                self.initial_load = False
 
             self.update_buttons()
         except RuntimeError:
