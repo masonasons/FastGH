@@ -74,10 +74,9 @@ class Repository:
 
     def format_single_line(self) -> str:
         """Format repository for single-line display."""
-        desc = self.description or "No description"
         lang = self.language or "Unknown"
         pushed = self._format_relative_time() if self.pushed_at else "Unknown"
-        return f"{self.full_name}: {desc} | {self.stars} stars | {lang} | Pushed {pushed}"
+        return f"{self.full_name} | {self.stars} stars | {lang} | Pushed {pushed}"
 
     def _format_relative_time(self) -> str:
         """Format pushed_at as relative time."""

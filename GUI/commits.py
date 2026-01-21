@@ -177,6 +177,9 @@ class CommitsDialog(wx.Dialog):
             for commit in commits:
                 self.commits_list.Append(commit.format_display())
 
+        # Focus on commits list
+        self.commits_list.SetFocus()
+
         self.update_buttons()
 
     def update_buttons(self):
