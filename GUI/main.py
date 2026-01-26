@@ -1410,7 +1410,21 @@ class MainGui(wx.Frame):
             self.app.prefs.window_shown = True
             self.Show()
             self.Raise()
-            self.SetFocus()
+            self._focus_current_list()
+
+    def _focus_current_list(self):
+        """Focus the list control for the current notebook tab."""
+        page = self.notebook.GetSelection()
+        lists = [
+            self.feed_list,
+            self.repos_list,
+            self.starred_list,
+            self.watched_list,
+            self.following_list,
+            self.notifications_list
+        ]
+        if 0 <= page < len(lists):
+            lists[page].SetFocus()
 
     def register_global_hotkey(self):
         """Register the global hotkey for show/hide."""
