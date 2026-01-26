@@ -262,6 +262,8 @@ class MainGui(wx.Frame):
         m_search = search_menu.Append(-1, "Search GitHub...\tCtrl+F", "Search repositories and users")
         self.Bind(wx.EVT_MENU, self.on_search, m_search)
         search_menu.AppendSeparator()
+        m_go_to_repo = search_menu.Append(-1, "Go to Repository...\tCtrl+L", "Jump to a repository by URL or owner/repo")
+        self.Bind(wx.EVT_MENU, self.on_go_to_repo, m_go_to_repo)
         m_view_user = search_menu.Append(-1, "View User Profile...\tCtrl+U", "Look up a user by username")
         self.Bind(wx.EVT_MENU, self.on_view_user, m_view_user)
         menu_bar.Append(search_menu, "&Search")
@@ -1248,6 +1250,56 @@ class MainGui(wx.Frame):
                 profile_dlg = UserProfileDialog(self, username)
                 profile_dlg.ShowModal()
                 profile_dlg.Destroy()
+        dlg.Destroy()
+
+    def on_go_to_repo(self, event):
+        """Jump to a repository by URL or owner/repo pair."""
+        import re
+        dlg = wx.TextEntryDialog(
+            self,
+            "Enter repository URL or owner/repo:",
+            "Go to Repository",
+            ""
+        )
+        if dlg.ShowModal() == wx.ID_OK:
+            input_text = dlg.GetValue().strip()
+            if input_text:
+                owner = None
+                repo = None
+
+                # Try to parse as GitHub URL
+                url_match = re.match(r'(?:https?://)?(?:www\.)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$', input_text)
+                if url_match:
+                    owner, repo = url_match.groups()
+                else:
+                    # Try to parse as owner/repo pair
+                    pair_match = re.match(r'^([^/]+)/([^/]+)$', input_text)
+                    if pair_match:
+                        owner, repo = pair_match.groups()
+
+                if owner and repo:
+                    # Fetch the repository
+                    repository = self.app.currentAccount.get_repo(owner, repo)
+                    if repository:
+                        from GUI.view import ViewRepoDialog
+                        view_dlg = ViewRepoDialog(self, repository)
+                        view_dlg.ShowModal()
+                        view_dlg.Destroy()
+                    else:
+                        wx.MessageBox(
+                            f"Repository '{owner}/{repo}' not found or you don't have access.",
+                            "Repository Not Found",
+                            wx.OK | wx.ICON_ERROR
+                        )
+                else:
+                    wx.MessageBox(
+                        "Invalid input. Please enter a GitHub URL or owner/repo format.\n\n"
+                        "Examples:\n"
+                        "  https://github.com/owner/repo\n"
+                        "  owner/repo",
+                        "Invalid Input",
+                        wx.OK | wx.ICON_WARNING
+                    )
         dlg.Destroy()
 
     def on_view_repo(self, event):
