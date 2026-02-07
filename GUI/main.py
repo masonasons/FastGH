@@ -218,12 +218,18 @@ class MainGui(wx.Frame):
 
         self.panel.SetSizer(main_sizer)
 
-    def _menu_label(self, label, shortcut):
-        """Format menu label with shortcut - on macOS show in parens, elsewhere use accelerator."""
-        if platform.system() == "Darwin":
-            return f"{label} ({shortcut})" if shortcut else label
+    def _menu_label(self, label, shortcut, disable_accel_on_mac=False):
+        """Format menu label with shortcut.
+
+        On macOS, certain shortcuts (Return, Ctrl+C, etc.) conflict with dialogs
+        and should be shown in parens instead of as accelerators.
+        """
+        if not shortcut:
+            return label
+        if platform.system() == "Darwin" and disable_accel_on_mac:
+            return f"{label} ({shortcut})"
         else:
-            return f"{label}\t{shortcut}" if shortcut else label
+            return f"{label}\t{shortcut}"
 
     def init_menu(self):
         """Initialize the menu bar."""
@@ -280,11 +286,12 @@ class MainGui(wx.Frame):
 
         # Actions menu
         actions_menu = wx.Menu()
-        m_view_repo = actions_menu.Append(-1, self._menu_label("View Repository Info", "Return" if not is_mac else None), "View repository details")
+        # Return and Ctrl+C conflict with dialogs on macOS - disable accelerators
+        m_view_repo = actions_menu.Append(-1, self._menu_label("View Repository Info", "Return", disable_accel_on_mac=True), "View repository details")
         self.Bind(wx.EVT_MENU, self.on_view_repo, m_view_repo)
         m_open_url = actions_menu.Append(-1, self._menu_label("Open in Browser", "Ctrl+O"), "Open selected repository in browser")
         self.Bind(wx.EVT_MENU, self.on_open_url, m_open_url)
-        m_copy_url = actions_menu.Append(-1, self._menu_label("Copy URL", "Ctrl+C"), "Copy repository URL to clipboard")
+        m_copy_url = actions_menu.Append(-1, self._menu_label("Copy URL", "Ctrl+C", disable_accel_on_mac=True), "Copy repository URL to clipboard")
         self.Bind(wx.EVT_MENU, self.on_copy_url, m_copy_url)
         m_copy_clone = actions_menu.Append(-1, self._menu_label("Copy Clone URL", "Ctrl+Shift+C"), "Copy git clone URL")
         self.Bind(wx.EVT_MENU, self.on_copy_clone, m_copy_clone)
