@@ -218,76 +218,86 @@ class MainGui(wx.Frame):
 
         self.panel.SetSizer(main_sizer)
 
+    def _menu_label(self, label, shortcut):
+        """Format menu label with shortcut - on macOS show in parens, elsewhere use accelerator."""
+        if platform.system() == "Darwin":
+            return f"{label} ({shortcut})" if shortcut else label
+        else:
+            return f"{label}\t{shortcut}" if shortcut else label
+
     def init_menu(self):
         """Initialize the menu bar."""
         menu_bar = wx.MenuBar()
+        is_mac = platform.system() == "Darwin"
 
         # Application menu
         app_menu = wx.Menu()
-        m_accounts = app_menu.Append(-1, "Accounts\tCtrl+A", "Manage accounts")
+        m_accounts = app_menu.Append(-1, self._menu_label("Accounts", "Ctrl+A"), "Manage accounts")
         self.Bind(wx.EVT_MENU, self.on_accounts, m_accounts)
-        m_options = app_menu.Append(-1, "Options\tCtrl+,", "Application options")
+        m_options = app_menu.Append(-1, self._menu_label("Options", "Ctrl+,"), "Application options")
         self.Bind(wx.EVT_MENU, self.on_options, m_options)
+        if not is_mac:
+            app_menu.AppendSeparator()
+            m_hide = app_menu.Append(-1, "Hide Window\tCtrl+H", "Hide window to system tray")
+            self.Bind(wx.EVT_MENU, self.on_hide, m_hide)
         app_menu.AppendSeparator()
-        m_hide = app_menu.Append(-1, "Hide Window\tCtrl+H", "Hide window to system tray")
-        self.Bind(wx.EVT_MENU, self.on_hide, m_hide)
-        m_exit = app_menu.Append(wx.ID_EXIT, "Exit\tAlt+X", "Exit application")
+        m_exit = app_menu.Append(wx.ID_EXIT, self._menu_label("Exit", "Alt+X"), "Exit application")
         self.Bind(wx.EVT_MENU, self.on_exit, m_exit)
         menu_bar.Append(app_menu, "&Application")
 
         # View menu
         view_menu = wx.Menu()
-        m_refresh = view_menu.Append(-1, "Refresh\tF5", "Refresh all data")
+        m_refresh = view_menu.Append(-1, self._menu_label("Refresh", "F5"), "Refresh all data")
         self.Bind(wx.EVT_MENU, self.on_refresh, m_refresh)
         view_menu.AppendSeparator()
-        m_feed = view_menu.Append(-1, "Activity Feed\tCtrl+1", "Show activity feed")
+        m_feed = view_menu.Append(-1, self._menu_label("Activity Feed", "Ctrl+1"), "Show activity feed")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(0), m_feed)
-        m_your_repos = view_menu.Append(-1, "Your Repositories\tCtrl+2", "Show your repositories")
+        m_your_repos = view_menu.Append(-1, self._menu_label("Your Repositories", "Ctrl+2"), "Show your repositories")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(1), m_your_repos)
-        m_starred = view_menu.Append(-1, "Starred\tCtrl+3", "Show starred repositories")
+        m_starred = view_menu.Append(-1, self._menu_label("Starred", "Ctrl+3"), "Show starred repositories")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(2), m_starred)
-        m_watched = view_menu.Append(-1, "Watched\tCtrl+4", "Show watched repositories")
+        m_watched = view_menu.Append(-1, self._menu_label("Watched", "Ctrl+4"), "Show watched repositories")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(3), m_watched)
-        m_following = view_menu.Append(-1, "Following\tCtrl+5", "Show users you follow")
+        m_following = view_menu.Append(-1, self._menu_label("Following", "Ctrl+5"), "Show users you follow")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(4), m_following)
-        m_notifications = view_menu.Append(-1, "Notifications\tCtrl+6", "Show notifications")
+        m_notifications = view_menu.Append(-1, self._menu_label("Notifications", "Ctrl+6"), "Show notifications")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(5), m_notifications)
         view_menu.AppendSeparator()
-        m_mark_all_read = view_menu.Append(-1, "Mark All Notifications Read\tCtrl+Shift+R", "Mark all notifications as read")
+        m_mark_all_read = view_menu.Append(-1, self._menu_label("Mark All Notifications Read", "Ctrl+Shift+R"), "Mark all notifications as read")
         self.Bind(wx.EVT_MENU, self.on_mark_all_notifications_read, m_mark_all_read)
         menu_bar.Append(view_menu, "&View")
 
         # Search menu
         search_menu = wx.Menu()
-        m_search = search_menu.Append(-1, "Search GitHub...\tCtrl+F", "Search repositories and users")
+        m_search = search_menu.Append(-1, self._menu_label("Search GitHub...", "Ctrl+F"), "Search repositories and users")
         self.Bind(wx.EVT_MENU, self.on_search, m_search)
         search_menu.AppendSeparator()
-        m_go_to_repo = search_menu.Append(-1, "Go to Repository...\tCtrl+L", "Jump to a repository by URL or owner/repo")
+        m_go_to_repo = search_menu.Append(-1, self._menu_label("Go to Repository...", "Ctrl+L"), "Jump to a repository by URL or owner/repo")
         self.Bind(wx.EVT_MENU, self.on_go_to_repo, m_go_to_repo)
-        m_view_user = search_menu.Append(-1, "View User Profile...\tCtrl+U", "Look up a user by username")
+        m_view_user = search_menu.Append(-1, self._menu_label("View User Profile...", "Ctrl+U"), "Look up a user by username")
         self.Bind(wx.EVT_MENU, self.on_view_user, m_view_user)
         menu_bar.Append(search_menu, "&Search")
 
         # Actions menu
         actions_menu = wx.Menu()
-        m_view_repo = actions_menu.Append(-1, "View Repository Info\tReturn", "View repository details")
+        m_view_repo = actions_menu.Append(-1, self._menu_label("View Repository Info", "Return" if not is_mac else None), "View repository details")
         self.Bind(wx.EVT_MENU, self.on_view_repo, m_view_repo)
-        m_open_url = actions_menu.Append(-1, "Open in Browser\tCtrl+O", "Open selected repository in browser")
+        m_open_url = actions_menu.Append(-1, self._menu_label("Open in Browser", "Ctrl+O"), "Open selected repository in browser")
         self.Bind(wx.EVT_MENU, self.on_open_url, m_open_url)
-        m_copy_url = actions_menu.Append(-1, "Copy URL\tCtrl+C", "Copy repository URL to clipboard")
+        m_copy_url = actions_menu.Append(-1, self._menu_label("Copy URL", "Ctrl+C"), "Copy repository URL to clipboard")
         self.Bind(wx.EVT_MENU, self.on_copy_url, m_copy_url)
-        m_copy_clone = actions_menu.Append(-1, "Copy Clone URL\tCtrl+Shift+C", "Copy git clone URL")
+        m_copy_clone = actions_menu.Append(-1, self._menu_label("Copy Clone URL", "Ctrl+Shift+C"), "Copy git clone URL")
         self.Bind(wx.EVT_MENU, self.on_copy_clone, m_copy_clone)
         actions_menu.AppendSeparator()
-        m_view_issues = actions_menu.Append(-1, "View Issues\tCtrl+I", "View repository issues")
+        m_view_issues = actions_menu.Append(-1, self._menu_label("View Issues", "Ctrl+I"), "View repository issues")
         self.Bind(wx.EVT_MENU, self.on_view_issues, m_view_issues)
-        m_view_prs = actions_menu.Append(-1, "View Pull Requests\tCtrl+P", "View pull requests")
+        m_view_prs = actions_menu.Append(-1, self._menu_label("View Pull Requests", "Ctrl+P"), "View pull requests")
         self.Bind(wx.EVT_MENU, self.on_view_prs, m_view_prs)
-        m_view_commits = actions_menu.Append(-1, "View Commits\tCtrl+M", "View repository commits")
+        m_view_commits = actions_menu.Append(-1, self._menu_label("View Commits", "Ctrl+M"), "View repository commits")
         self.Bind(wx.EVT_MENU, self.on_view_commits, m_view_commits)
-        m_view_actions = actions_menu.Append(-1, "View Actions\tCtrl+G", "View GitHub Actions workflow runs")
+        m_view_actions = actions_menu.Append(-1, self._menu_label("View Actions", "Ctrl+G"), "View GitHub Actions workflow runs")
         self.Bind(wx.EVT_MENU, self.on_view_actions, m_view_actions)
-        m_view_releases = actions_menu.Append(-1, "View Releases\tCtrl+R", "View releases and download artifacts")
+        m_view_releases = actions_menu.Append(-1, self._menu_label("View Releases", "Ctrl+R"), "View releases and download artifacts")
         self.Bind(wx.EVT_MENU, self.on_view_releases, m_view_releases)
         menu_bar.Append(actions_menu, "A&ctions")
 
@@ -1214,14 +1224,14 @@ class MainGui(wx.Frame):
     def on_accounts(self, event):
         """Show accounts dialog."""
         from GUI.accounts import AccountsDialog
-        dlg = AccountsDialog(self)
+        dlg = AccountsDialog(self._get_dialog_parent())
         dlg.ShowModal()
         dlg.Destroy()
 
     def on_options(self, event):
         """Show options dialog."""
         from GUI.options import OptionsDialog
-        dlg = OptionsDialog(self)
+        dlg = OptionsDialog(self._get_dialog_parent())
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -1236,18 +1246,18 @@ class MainGui(wx.Frame):
     def on_search(self, event):
         """Open search dialog."""
         from GUI.search import SearchDialog
-        dlg = SearchDialog(self)
+        dlg = SearchDialog(self._get_dialog_parent())
         dlg.ShowModal()
         dlg.Destroy()
 
     def on_view_user(self, event):
         """View a user profile by username."""
-        dlg = wx.TextEntryDialog(self, "Enter GitHub username:", "View User Profile")
+        dlg = wx.TextEntryDialog(self._get_dialog_parent(), "Enter GitHub username:", "View User Profile")
         if dlg.ShowModal() == wx.ID_OK:
             username = dlg.GetValue().strip()
             if username:
                 from GUI.search import UserProfileDialog
-                profile_dlg = UserProfileDialog(self, username)
+                profile_dlg = UserProfileDialog(self._get_dialog_parent(), username)
                 profile_dlg.ShowModal()
                 profile_dlg.Destroy()
         dlg.Destroy()
@@ -1256,7 +1266,7 @@ class MainGui(wx.Frame):
         """Jump to a repository by URL or owner/repo pair."""
         import re
         dlg = wx.TextEntryDialog(
-            self,
+            self._get_dialog_parent(),
             "Enter repository URL or owner/repo:",
             "Go to Repository",
             ""
@@ -1282,7 +1292,7 @@ class MainGui(wx.Frame):
                     repository = self.app.currentAccount.get_repo(owner, repo)
                     if repository:
                         from GUI.view import ViewRepoDialog
-                        view_dlg = ViewRepoDialog(self, repository)
+                        view_dlg = ViewRepoDialog(self._get_dialog_parent(), repository)
                         view_dlg.ShowModal()
                         view_dlg.Destroy()
                     else:
@@ -1307,7 +1317,7 @@ class MainGui(wx.Frame):
         repo = self.get_selected_repo()
         if repo:
             from GUI.view import ViewRepoDialog
-            dlg = ViewRepoDialog(self, repo)
+            dlg = ViewRepoDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1336,12 +1346,16 @@ class MainGui(wx.Frame):
                 wx.TheClipboard.Close()
                 self.status_bar.SetStatusText(f"Copied: {clone_url}")
 
+    def _get_dialog_parent(self):
+        """Get parent for dialogs - None on macOS to avoid menu issues."""
+        return None if platform.system() == "Darwin" else self
+
     def on_view_issues(self, event):
         """Open issues dialog."""
         repo = self.get_selected_repo()
         if repo:
             from GUI.issues import IssuesDialog
-            dlg = IssuesDialog(self, repo)
+            dlg = IssuesDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1350,7 +1364,7 @@ class MainGui(wx.Frame):
         repo = self.get_selected_repo()
         if repo:
             from GUI.pullrequests import PullRequestsDialog
-            dlg = PullRequestsDialog(self, repo)
+            dlg = PullRequestsDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1359,7 +1373,7 @@ class MainGui(wx.Frame):
         repo = self.get_selected_repo()
         if repo:
             from GUI.commits import CommitsDialog
-            dlg = CommitsDialog(self, repo)
+            dlg = CommitsDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1368,7 +1382,7 @@ class MainGui(wx.Frame):
         repo = self.get_selected_repo()
         if repo:
             from GUI.actions import ActionsDialog
-            dlg = ActionsDialog(self, repo)
+            dlg = ActionsDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1377,7 +1391,7 @@ class MainGui(wx.Frame):
         repo = self.get_selected_repo()
         if repo:
             from GUI.releases import ReleasesDialog
-            dlg = ReleasesDialog(self, repo)
+            dlg = ReleasesDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1386,15 +1400,19 @@ class MainGui(wx.Frame):
         repo = self.get_selected_repo()
         if repo:
             from GUI.search import UserProfileDialog
-            dlg = UserProfileDialog(self, repo.owner)
+            dlg = UserProfileDialog(self._get_dialog_parent(), repo.owner)
             dlg.ShowModal()
             dlg.Destroy()
 
     def on_close(self, event):
-        """Handle window close - hide to tray instead of exit."""
-        # Save window visibility state
-        self.app.prefs.window_shown = False
-        self.Hide()
+        """Handle window close - hide to tray instead of exit (exit on macOS)."""
+        if platform.system() == "Darwin":
+            # On macOS, actually exit since there's no tray
+            self.exit_app()
+        else:
+            # Save window visibility state
+            self.app.prefs.window_shown = False
+            self.Hide()
 
     def on_hide(self, event):
         """Hide window to system tray."""
@@ -1501,7 +1519,8 @@ def create_window():
     global window, tray_icon
     window = MainGui(APP_NAME)
 
-    # Create system tray icon
-    tray_icon = TaskBarIcon(window)
+    # Create system tray icon (not on macOS)
+    if platform.system() != "Darwin":
+        tray_icon = TaskBarIcon(window)
 
     return window
