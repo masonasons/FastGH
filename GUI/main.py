@@ -510,7 +510,7 @@ class MainGui(wx.Frame):
         """Show the commits dialog."""
         self.status_bar.SetStatusText("Ready")
         from GUI.commits import CommitsDialog
-        dlg = CommitsDialog(self, repo)
+        dlg = CommitsDialog(self._get_dialog_parent(), repo)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -530,7 +530,7 @@ class MainGui(wx.Frame):
         """Show the releases dialog."""
         self.status_bar.SetStatusText("Ready")
         from GUI.releases import ReleasesDialog
-        dlg = ReleasesDialog(self, repo)
+        dlg = ReleasesDialog(self._get_dialog_parent(), repo)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -569,7 +569,7 @@ class MainGui(wx.Frame):
         """Show the view repo dialog."""
         self.status_bar.SetStatusText("Ready")
         from GUI.view import ViewRepoDialog
-        dlg = ViewRepoDialog(self, repo)
+        dlg = ViewRepoDialog(self._get_dialog_parent(), repo)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -578,7 +578,7 @@ class MainGui(wx.Frame):
         feed_event = self.get_selected_feed_event()
         if feed_event:
             from GUI.search import UserProfileDialog
-            dlg = UserProfileDialog(self, feed_event.actor.login)
+            dlg = UserProfileDialog(self._get_dialog_parent(), feed_event.actor.login)
             dlg.ShowModal()
             dlg.Destroy()
 
