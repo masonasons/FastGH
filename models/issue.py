@@ -48,9 +48,10 @@ class Comment:
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     html_url: str = ""
+    kind: str = "issue"
 
     @classmethod
-    def from_github_api(cls, data: dict) -> 'Comment':
+    def from_github_api(cls, data: dict, kind: str = "issue") -> 'Comment':
         created_at = None
         if data.get('created_at'):
             try:
@@ -71,7 +72,8 @@ class Comment:
             user=User.from_github_api(data.get('user')),
             created_at=created_at,
             updated_at=updated_at,
-            html_url=data.get('html_url', '')
+            html_url=data.get('html_url', ''),
+            kind=kind
         )
 
 

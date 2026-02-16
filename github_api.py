@@ -737,9 +737,47 @@ class GitHubAccount:
         result = self.update_pull_request(owner, repo, number, state="closed")
         return result is not None
 
+    def get_pr_review_comments(self, owner: str, repo: str, number: int, per_page: int = 100) -> list[Comment]:
+        """Get review comments on a pull request."""
+        comments = []
+        page = 1
+
+        while True:
+            response = self._session.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{number}/comments",
+                params={
+                    "per_page": per_page,
+                    "page": page
+                }
+            )
+
+            if response.status_code != 200:
+                break
+
+            data = response.json()
+            if not data:
+                break
+
+            for item in data:
+                comments.append(Comment.from_github_api(item, kind="review"))
+
+            if len(data) < per_page:
+                break
+
+            page += 1
+
+        return comments
+
     def get_pr_comments(self, owner: str, repo: str, number: int, per_page: int = 100) -> list[Comment]:
-        """Get comments on a pull request (issue comments, not review comments)."""
-        return self.get_issue_comments(owner, repo, number, per_page)
+        """Get all comments on a pull request, including review comments."""
+        issue_comments = self.get_issue_comments(owner, repo, number, per_page)
+        review_comments = self.get_pr_review_comments(owner, repo, number, per_page)
+        comments = issue_comments + review_comments
+
+        # Keep stable ordering by creation time so the dialog mirrors issue behavior.
+        comments.sort(key=lambda c: c.created_at.timestamp() if c.created_at else 0)
+
+        return comments
 
     def create_pr_comment(self, owner: str, repo: str, number: int, body: str) -> Comment | None:
         """Create a comment on a pull request."""
