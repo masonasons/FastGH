@@ -191,6 +191,8 @@ class Event:
             label_name = label.get("name", "")
             assignee = payload.get("assignee", {}) or {}
             assignee_login = assignee.get("login", "")
+            milestone = payload.get("milestone", {}) or {}
+            milestone_title = milestone.get("title", "")
             if action == "labeled" and label_name:
                 if title:
                     return f"labeled issue #{number} [{label_name}]: {title}"
@@ -207,6 +209,14 @@ class Event:
                 if title:
                     return f"unassigned {assignee_login} from issue #{number}: {title}"
                 return f"unassigned {assignee_login} from issue #{number}"
+            if action == "milestoned" and milestone_title:
+                if title:
+                    return f"milestoned issue #{number} [{milestone_title}]: {title}"
+                return f"milestoned issue #{number} [{milestone_title}]"
+            if action == "demilestoned" and milestone_title:
+                if title:
+                    return f"demilestoned issue #{number} [{milestone_title}]: {title}"
+                return f"demilestoned issue #{number} [{milestone_title}]"
             if title:
                 return f"{action} issue #{number}: {title}"
             return f"{action} issue #{number}"
@@ -233,6 +243,8 @@ class Event:
             label_name = label.get("name", "")
             assignee = payload.get("assignee", {}) or {}
             assignee_login = assignee.get("login", "")
+            milestone = payload.get("milestone", {}) or {}
+            milestone_title = milestone.get("title", "")
             if action == "opened":
                 if title:
                     return f"opened PR #{number}: {title}"
@@ -262,6 +274,14 @@ class Event:
                 if title:
                     return f"unassigned {assignee_login} from PR #{number}: {title}"
                 return f"unassigned {assignee_login} from PR #{number}"
+            elif action == "milestoned" and milestone_title:
+                if title:
+                    return f"milestoned PR #{number} [{milestone_title}]: {title}"
+                return f"milestoned PR #{number} [{milestone_title}]"
+            elif action == "demilestoned" and milestone_title:
+                if title:
+                    return f"demilestoned PR #{number} [{milestone_title}]: {title}"
+                return f"demilestoned PR #{number} [{milestone_title}]"
             if title:
                 return f"{action} PR #{number}: {title}"
             return f"{action} PR #{number}"
