@@ -124,6 +124,9 @@ class MainGui(wx.Frame):
         self._last_notification_ids = None
         self._last_starred_ids = None
         self._last_watched_ids = None
+        # Feed PR title backfill cache: {(owner, repo, number): title_or_none}
+        self._feed_pr_title_cache = {}
+        self._feed_pr_title_backfill_running = False
 
         # Auto-refresh timer
         self.auto_refresh_timer = wx.Timer(self)
@@ -852,20 +855,122 @@ class MainGui(wx.Frame):
         except Exception as e:
             wx.CallAfter(self.status_bar.SetStatusText, f"Error loading feed: {e}")
 
+    def _render_feed_list(self):
+        """Render feed list from current event data while preserving selection."""
+        selection = self.feed_list.GetSelection()
+        self.feed_list.Clear()
+        for event in self.feed:
+            self.feed_list.Append(event.format_display())
+        if selection != wx.NOT_FOUND and selection < self.feed_list.GetCount():
+            self.feed_list.SetSelection(selection)
+
+    def _extract_feed_pr_key(self, event):
+        """Extract a normalized key for PR-related feed events."""
+        if event.type not in ("PullRequestEvent", "PullRequestReviewEvent", "PullRequestReviewCommentEvent"):
+            return None
+
+        pr = event.payload.get("pull_request", {}) or {}
+        number = pr.get("number")
+        if not number:
+            return None
+
+        try:
+            number = int(number)
+        except (TypeError, ValueError):
+            return None
+
+        parts = event.repo.name.split("/")
+        if len(parts) != 2:
+            return None
+        owner, repo_name = parts
+        return (owner, repo_name, number)
+
+    def _apply_cached_pr_titles_to_feed(self) -> bool:
+        """Apply cached PR titles into feed payloads where title is missing."""
+        updated = False
+        for event in self.feed:
+            key = self._extract_feed_pr_key(event)
+            if not key:
+                continue
+
+            pr = event.payload.get("pull_request", {}) or {}
+            if (pr.get("title") or "").strip():
+                continue
+
+            if key not in self._feed_pr_title_cache:
+                continue
+
+            cached_title = self._feed_pr_title_cache.get(key)
+            if cached_title:
+                pr["title"] = cached_title
+                event.payload["pull_request"] = pr
+                updated = True
+        return updated
+
+    def _collect_missing_feed_pr_title_keys(self):
+        """Collect unique PR keys that still need title backfill."""
+        keys = []
+        seen = set()
+
+        for event in self.feed:
+            key = self._extract_feed_pr_key(event)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+
+            pr = event.payload.get("pull_request", {}) or {}
+            if (pr.get("title") or "").strip():
+                continue
+
+            # Skip if cached (including known-missing = None)
+            if key in self._feed_pr_title_cache:
+                continue
+
+            keys.append(key)
+        return keys
+
+    def _finish_feed_pr_title_backfill(self):
+        """Finalize one backfill batch and queue next if needed."""
+        self._feed_pr_title_backfill_running = False
+        if self._apply_cached_pr_titles_to_feed():
+            self._render_feed_list()
+        self._start_feed_pr_title_backfill()
+
+    def _start_feed_pr_title_backfill(self):
+        """Backfill missing PR titles for feed rows using minimal API calls."""
+        if self._feed_pr_title_backfill_running:
+            return
+
+        missing_keys = self._collect_missing_feed_pr_title_keys()
+        if not missing_keys:
+            return
+
+        # Keep call volume low per refresh cycle.
+        batch = missing_keys[:8]
+        self._feed_pr_title_backfill_running = True
+
+        def do_backfill():
+            for owner, repo_name, number in batch:
+                pr = self.app.currentAccount.get_pull_request(owner, repo_name, number)
+                if pr and (pr.title or "").strip():
+                    self._feed_pr_title_cache[(owner, repo_name, number)] = pr.title
+                else:
+                    # Cache misses too so we don't re-query repeatedly.
+                    self._feed_pr_title_cache[(owner, repo_name, number)] = None
+            wx.CallAfter(self._finish_feed_pr_title_backfill)
+
+        threading.Thread(target=do_backfill, daemon=True).start()
+
     def _update_feed_list(self):
         """Update feed list on main thread."""
         # Check for new items and notify
         self._check_and_notify_feed(self.feed)
 
-        # Preserve selection
-        selection = self.feed_list.GetSelection()
-        self.feed_list.Clear()
-        for event in self.feed:
-            self.feed_list.Append(event.format_display())
-        # Restore selection if still valid
-        if selection != wx.NOT_FOUND and selection < self.feed_list.GetCount():
-            self.feed_list.SetSelection(selection)
+        # Apply any previously fetched titles before rendering.
+        self._apply_cached_pr_titles_to_feed()
+        self._render_feed_list()
         self._update_status()
+        self._start_feed_pr_title_backfill()
 
     def _load_repos(self):
         """Load user's repositories in background."""
