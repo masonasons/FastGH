@@ -189,6 +189,8 @@ class Event:
             title = issue.get("title", "")[:50]
             label = payload.get("label", {}) or {}
             label_name = label.get("name", "")
+            assignee = payload.get("assignee", {}) or {}
+            assignee_login = assignee.get("login", "")
             if action == "labeled" and label_name:
                 if title:
                     return f"labeled issue #{number} [{label_name}]: {title}"
@@ -197,6 +199,14 @@ class Event:
                 if title:
                     return f"unlabeled issue #{number} [{label_name}]: {title}"
                 return f"unlabeled issue #{number} [{label_name}]"
+            if action == "assigned" and assignee_login:
+                if title:
+                    return f"assigned {assignee_login} to issue #{number}: {title}"
+                return f"assigned {assignee_login} to issue #{number}"
+            if action == "unassigned" and assignee_login:
+                if title:
+                    return f"unassigned {assignee_login} from issue #{number}: {title}"
+                return f"unassigned {assignee_login} from issue #{number}"
             if title:
                 return f"{action} issue #{number}: {title}"
             return f"{action} issue #{number}"
@@ -221,6 +231,8 @@ class Event:
             title = pr.get("title", "")[:50]
             label = payload.get("label", {}) or {}
             label_name = label.get("name", "")
+            assignee = payload.get("assignee", {}) or {}
+            assignee_login = assignee.get("login", "")
             if action == "opened":
                 if title:
                     return f"opened PR #{number}: {title}"
@@ -242,6 +254,14 @@ class Event:
                 if title:
                     return f"unlabeled PR #{number} [{label_name}]: {title}"
                 return f"unlabeled PR #{number} [{label_name}]"
+            elif action == "assigned" and assignee_login:
+                if title:
+                    return f"assigned {assignee_login} to PR #{number}: {title}"
+                return f"assigned {assignee_login} to PR #{number}"
+            elif action == "unassigned" and assignee_login:
+                if title:
+                    return f"unassigned {assignee_login} from PR #{number}: {title}"
+                return f"unassigned {assignee_login} from PR #{number}"
             if title:
                 return f"{action} PR #{number}: {title}"
             return f"{action} PR #{number}"
