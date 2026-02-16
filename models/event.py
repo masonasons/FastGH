@@ -169,7 +169,14 @@ class Event:
             action = payload.get("action", "created")
             issue = payload.get("issue", {})
             number = issue.get("number", "")
-            return f"commented on issue #{number}"
+            title = issue.get("title", "")[:50]
+            if action in ("created", "edited"):
+                if title:
+                    return f"commented on issue #{number}: {title}"
+                return f"commented on issue #{number}"
+            if title:
+                return f"{action} comment on issue #{number}: {title}"
+            return f"{action} comment on issue #{number}"
 
         elif self.type == "PullRequestEvent":
             action = payload.get("action", "")
@@ -189,17 +196,27 @@ class Event:
             action = payload.get("action", "")
             pr = payload.get("pull_request", {})
             number = pr.get("number", "")
+            title = pr.get("title", "")[:50]
             review = payload.get("review", {})
             state = review.get("state", "")
             if state == "approved":
+                if title:
+                    return f"approved PR #{number}: {title}"
                 return f"approved PR #{number}"
             elif state == "changes_requested":
+                if title:
+                    return f"requested changes on PR #{number}: {title}"
                 return f"requested changes on PR #{number}"
+            if title:
+                return f"reviewed PR #{number}: {title}"
             return f"reviewed PR #{number}"
 
         elif self.type == "PullRequestReviewCommentEvent":
             pr = payload.get("pull_request", {})
             number = pr.get("number", "")
+            title = pr.get("title", "")[:50]
+            if title:
+                return f"commented on PR #{number}: {title}"
             return f"commented on PR #{number}"
 
         elif self.type == "ReleaseEvent":
