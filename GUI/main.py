@@ -124,9 +124,10 @@ class MainGui(wx.Frame):
         self._last_notification_ids = None
         self._last_starred_ids = None
         self._last_watched_ids = None
-        # Feed PR title backfill cache: {(owner, repo, number): title_or_none}
+        # Feed title backfill caches: {(owner, repo, number): title_or_none}
         self._feed_pr_title_cache = {}
-        self._feed_pr_title_backfill_running = False
+        self._feed_issue_title_cache = {}
+        self._feed_title_backfill_running = False
 
         # Auto-refresh timer
         self.auto_refresh_timer = wx.Timer(self)
@@ -885,6 +886,27 @@ class MainGui(wx.Frame):
         owner, repo_name = parts
         return (owner, repo_name, number)
 
+    def _extract_feed_issue_key(self, event):
+        """Extract a normalized key for issue-related feed events."""
+        if event.type not in ("IssuesEvent", "IssueCommentEvent"):
+            return None
+
+        issue = event.payload.get("issue", {}) or {}
+        number = issue.get("number")
+        if not number:
+            return None
+
+        try:
+            number = int(number)
+        except (TypeError, ValueError):
+            return None
+
+        parts = event.repo.name.split("/")
+        if len(parts) != 2:
+            return None
+        owner, repo_name = parts
+        return (owner, repo_name, number)
+
     def _apply_cached_pr_titles_to_feed(self) -> bool:
         """Apply cached PR titles into feed payloads where title is missing."""
         updated = False
@@ -907,57 +929,95 @@ class MainGui(wx.Frame):
                 updated = True
         return updated
 
-    def _collect_missing_feed_pr_title_keys(self):
-        """Collect unique PR keys that still need title backfill."""
-        keys = []
-        seen = set()
+    def _apply_cached_issue_titles_to_feed(self) -> bool:
+        """Apply cached issue titles into feed payloads where title is missing."""
+        updated = False
+        for event in self.feed:
+            key = self._extract_feed_issue_key(event)
+            if not key:
+                continue
+
+            issue = event.payload.get("issue", {}) or {}
+            if (issue.get("title") or "").strip():
+                continue
+
+            if key not in self._feed_issue_title_cache:
+                continue
+
+            cached_title = self._feed_issue_title_cache.get(key)
+            if cached_title:
+                issue["title"] = cached_title
+                event.payload["issue"] = issue
+                updated = True
+        return updated
+
+    def _apply_cached_feed_titles_to_feed(self) -> bool:
+        """Apply all cached feed title backfills."""
+        updated_pr = self._apply_cached_pr_titles_to_feed()
+        updated_issue = self._apply_cached_issue_titles_to_feed()
+        return updated_pr or updated_issue
+
+    def _collect_missing_feed_title_jobs(self):
+        """Collect unique feed title backfill jobs in feed order."""
+        jobs = []
+        seen_pr = set()
+        seen_issue = set()
 
         for event in self.feed:
-            key = self._extract_feed_pr_key(event)
-            if not key or key in seen:
-                continue
-            seen.add(key)
+            pr_key = self._extract_feed_pr_key(event)
+            if pr_key and pr_key not in seen_pr:
+                seen_pr.add(pr_key)
+                pr = event.payload.get("pull_request", {}) or {}
+                if not (pr.get("title") or "").strip() and pr_key not in self._feed_pr_title_cache:
+                    jobs.append(("pr", pr_key))
 
-            pr = event.payload.get("pull_request", {}) or {}
-            if (pr.get("title") or "").strip():
-                continue
+            issue_key = self._extract_feed_issue_key(event)
+            if issue_key and issue_key not in seen_issue:
+                seen_issue.add(issue_key)
+                issue = event.payload.get("issue", {}) or {}
+                if not (issue.get("title") or "").strip() and issue_key not in self._feed_issue_title_cache:
+                    jobs.append(("issue", issue_key))
 
-            # Skip if cached (including known-missing = None)
-            if key in self._feed_pr_title_cache:
-                continue
+        return jobs
 
-            keys.append(key)
-        return keys
-
-    def _finish_feed_pr_title_backfill(self):
+    def _finish_feed_title_backfill(self):
         """Finalize one backfill batch and queue next if needed."""
-        self._feed_pr_title_backfill_running = False
-        if self._apply_cached_pr_titles_to_feed():
+        self._feed_title_backfill_running = False
+        if self._apply_cached_feed_titles_to_feed():
             self._render_feed_list()
-        self._start_feed_pr_title_backfill()
+        self._start_feed_title_backfill()
 
-    def _start_feed_pr_title_backfill(self):
-        """Backfill missing PR titles for feed rows using minimal API calls."""
-        if self._feed_pr_title_backfill_running:
+    def _start_feed_title_backfill(self):
+        """Backfill missing issue/PR titles for feed rows using minimal API calls."""
+        if self._feed_title_backfill_running:
             return
 
-        missing_keys = self._collect_missing_feed_pr_title_keys()
-        if not missing_keys:
+        jobs = self._collect_missing_feed_title_jobs()
+        if not jobs:
             return
 
         # Keep call volume low per refresh cycle.
-        batch = missing_keys[:8]
-        self._feed_pr_title_backfill_running = True
+        batch = jobs[:8]
+        self._feed_title_backfill_running = True
 
         def do_backfill():
-            for owner, repo_name, number in batch:
-                pr = self.app.currentAccount.get_pull_request(owner, repo_name, number)
-                if pr and (pr.title or "").strip():
-                    self._feed_pr_title_cache[(owner, repo_name, number)] = pr.title
+            for kind, key in batch:
+                owner, repo_name, number = key
+                if kind == "pr":
+                    pr = self.app.currentAccount.get_pull_request(owner, repo_name, number)
+                    if pr and (pr.title or "").strip():
+                        self._feed_pr_title_cache[key] = pr.title
+                    else:
+                        # Cache misses too so we don't re-query repeatedly.
+                        self._feed_pr_title_cache[key] = None
                 else:
-                    # Cache misses too so we don't re-query repeatedly.
-                    self._feed_pr_title_cache[(owner, repo_name, number)] = None
-            wx.CallAfter(self._finish_feed_pr_title_backfill)
+                    issue = self.app.currentAccount.get_issue(owner, repo_name, number)
+                    if issue and (issue.title or "").strip():
+                        self._feed_issue_title_cache[key] = issue.title
+                    else:
+                        # Cache misses too so we don't re-query repeatedly.
+                        self._feed_issue_title_cache[key] = None
+            wx.CallAfter(self._finish_feed_title_backfill)
 
         threading.Thread(target=do_backfill, daemon=True).start()
 
@@ -967,10 +1027,10 @@ class MainGui(wx.Frame):
         self._check_and_notify_feed(self.feed)
 
         # Apply any previously fetched titles before rendering.
-        self._apply_cached_pr_titles_to_feed()
+        self._apply_cached_feed_titles_to_feed()
         self._render_feed_list()
         self._update_status()
-        self._start_feed_pr_title_backfill()
+        self._start_feed_title_backfill()
 
     def _load_repos(self):
         """Load user's repositories in background."""

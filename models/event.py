@@ -187,7 +187,9 @@ class Event:
             issue = payload.get("issue", {})
             number = issue.get("number", "")
             title = issue.get("title", "")[:50]
-            return f"{action} issue #{number}: {title}"
+            if title:
+                return f"{action} issue #{number}: {title}"
+            return f"{action} issue #{number}"
 
         elif self.type == "IssueCommentEvent":
             action = payload.get("action", "created")
