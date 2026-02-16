@@ -6,3 +6,4 @@ from .commit import Commit, CommitAuthor, CommitFile
 from .user import UserProfile
 from .workflow import Workflow, WorkflowRun, WorkflowJob
 from .release import Release, ReleaseAsset
+from .discussion import Discussion, DiscussionComment

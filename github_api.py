@@ -15,6 +15,7 @@ from models.release import Release, ReleaseAsset
 from models.notification import Notification
 from models.event import Event
 from models.content import ContentItem
+from models.discussion import Discussion, DiscussionComment
 
 # GitHub OAuth App Client ID
 # You need to create an OAuth App at https://github.com/settings/developers
@@ -125,6 +126,7 @@ class GitHubAccount:
         self.index = index
         self.ready = False
         self.me = None
+        self._last_error = ""
         self._session = requests.Session()
 
         # Load config
@@ -419,6 +421,67 @@ class GitHubAccount:
             return self.me.get("name") or self.me.get("login", "")
         return ""
 
+    def get_last_error(self) -> str:
+        """Get the last API error message, if any."""
+        return self._last_error
+
+    def _set_last_error(self, message: str = ""):
+        """Store a concise API error message for UI reporting."""
+        self._last_error = (message or "").strip()
+
+    def _graphql(self, query: str, variables: dict = None) -> dict | None:
+        """Execute a GitHub GraphQL query/mutation."""
+        self._set_last_error("")
+        try:
+            response = self._session.post(
+                f"{GITHUB_API_URL}/graphql",
+                json={
+                    "query": query,
+                    "variables": variables or {}
+                }
+            )
+        except Exception as e:
+            self._set_last_error(f"GraphQL request failed: {e}")
+            return None
+
+        if response.status_code != 200:
+            body = ""
+            try:
+                body = response.text.strip()
+            except Exception:
+                body = ""
+            if body:
+                self._set_last_error(f"GraphQL HTTP {response.status_code}: {body[:200]}")
+            else:
+                self._set_last_error(f"GraphQL HTTP {response.status_code}")
+            return None
+
+        try:
+            payload = response.json()
+        except Exception as e:
+            self._set_last_error(f"Invalid GraphQL response: {e}")
+            return None
+
+        errors = payload.get("errors") or []
+        if errors:
+            messages = []
+            for err in errors[:3]:
+                msg = err.get("message")
+                if msg:
+                    messages.append(msg)
+            if messages:
+                self._set_last_error("GraphQL error: " + " | ".join(messages))
+            else:
+                self._set_last_error("GraphQL returned errors.")
+            return None
+
+        data = payload.get("data")
+        if data is None:
+            self._set_last_error("GraphQL returned no data.")
+            return None
+
+        return data
+
     # ============ Issues API ============
 
     def get_issues(self, owner: str, repo: str, state: str = "open", per_page: int = 100) -> list[Issue]:
@@ -681,6 +744,169 @@ class GitHubAccount:
     def create_pr_comment(self, owner: str, repo: str, number: int, body: str) -> Comment | None:
         """Create a comment on a pull request."""
         return self.create_issue_comment(owner, repo, number, body)
+
+    # ============ Discussions API (GraphQL) ============
+
+    def get_discussion(self, owner: str, repo: str, number: int, comments_first: int = 50) -> Discussion | None:
+        """Get a discussion and its first page of comments."""
+        query = """
+        query GetDiscussion($owner: String!, $repo: String!, $number: Int!, $commentsFirst: Int!) {
+          repository(owner: $owner, name: $repo) {
+            discussion(number: $number) {
+              id
+              number
+              title
+              body
+              url
+              isAnswered
+              createdAt
+              updatedAt
+              author {
+                login
+                avatarUrl
+              }
+              category {
+                name
+              }
+              comments(first: $commentsFirst) {
+                totalCount
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                nodes {
+                  id
+                  databaseId
+                  body
+                  url
+                  createdAt
+                  updatedAt
+                  author {
+                    login
+                    avatarUrl
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
+        data = self._graphql(
+            query=query,
+            variables={
+                "owner": owner,
+                "repo": repo,
+                "number": number,
+                "commentsFirst": comments_first
+            }
+        )
+        if not data:
+            return None
+
+        repo_data = data.get("repository") or {}
+        discussion_data = repo_data.get("discussion")
+        if not discussion_data:
+            self._set_last_error("Discussion not found or access denied.")
+            return None
+
+        self._set_last_error("")
+        return Discussion.from_graphql(discussion_data)
+
+    def get_discussion_comments(self, owner: str, repo: str, number: int,
+                                first: int = 50, after: str = None) -> tuple[list[DiscussionComment], bool, str | None]:
+        """Get one page of comments for a discussion."""
+        query = """
+        query GetDiscussionComments($owner: String!, $repo: String!, $number: Int!, $first: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            discussion(number: $number) {
+              comments(first: $first, after: $after) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                nodes {
+                  id
+                  databaseId
+                  body
+                  url
+                  createdAt
+                  updatedAt
+                  author {
+                    login
+                    avatarUrl
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
+        data = self._graphql(
+            query=query,
+            variables={
+                "owner": owner,
+                "repo": repo,
+                "number": number,
+                "first": first,
+                "after": after
+            }
+        )
+        if not data:
+            return [], False, None
+
+        repo_data = data.get("repository") or {}
+        discussion_data = repo_data.get("discussion") or {}
+        comments_connection = discussion_data.get("comments") or {}
+        nodes = comments_connection.get("nodes", []) or []
+        page_info = comments_connection.get("pageInfo", {}) or {}
+
+        comments = [DiscussionComment.from_graphql(item) for item in nodes]
+        has_next_page = page_info.get("hasNextPage", False)
+        end_cursor = page_info.get("endCursor")
+        self._set_last_error("")
+        return comments, has_next_page, end_cursor
+
+    def create_discussion_comment(self, discussion_id: str, body: str) -> DiscussionComment | None:
+        """Create a comment on a discussion."""
+        mutation = """
+        mutation AddDiscussionComment($discussionId: ID!, $body: String!) {
+          addDiscussionComment(input: {discussionId: $discussionId, body: $body}) {
+            comment {
+              id
+              databaseId
+              body
+              url
+              createdAt
+              updatedAt
+              author {
+                login
+                avatarUrl
+              }
+            }
+          }
+        }
+        """
+
+        data = self._graphql(
+            query=mutation,
+            variables={
+                "discussionId": discussion_id,
+                "body": body
+            }
+        )
+        if not data:
+            return None
+
+        add_comment = data.get("addDiscussionComment") or {}
+        comment_data = add_comment.get("comment")
+        if not comment_data:
+            self._set_last_error("Comment was not created.")
+            return None
+
+        self._set_last_error("")
+        return DiscussionComment.from_graphql(comment_data)
 
     # ============ Repository Permissions ============
 
