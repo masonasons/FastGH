@@ -187,7 +187,9 @@ class Event:
             issue = payload.get("issue", {})
             number = issue.get("number", "")
             title = issue.get("title", "")[:50]
-            return f"{action} issue #{number}: {title}"
+            if title:
+                return f"{action} issue #{number}: {title}"
+            return f"{action} issue #{number}"
 
         elif self.type == "IssueCommentEvent":
             action = payload.get("action", "created")
@@ -208,12 +210,20 @@ class Event:
             number = pr.get("number", "")
             title = pr.get("title", "")[:50]
             if action == "opened":
-                return f"opened PR #{number}: {title}"
+                if title:
+                    return f"opened PR #{number}: {title}"
+                return f"opened PR #{number}"
             elif action == "closed":
                 merged = pr.get("merged", False)
                 if merged:
-                    return f"merged PR #{number}: {title}"
-                return f"closed PR #{number}: {title}"
+                    if title:
+                        return f"merged PR #{number}: {title}"
+                    return f"merged PR #{number}"
+                if title:
+                    return f"closed PR #{number}: {title}"
+                return f"closed PR #{number}"
+            if title:
+                return f"{action} PR #{number}: {title}"
             return f"{action} PR #{number}"
 
         elif self.type == "PullRequestReviewEvent":
