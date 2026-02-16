@@ -63,6 +63,7 @@ class Event:
         "PublicEvent": "made public",
         "PullRequestEvent": "pull request",
         "PullRequestReviewEvent": "reviewed PR",
+        "PullRequestReviewThreadEvent": "updated PR review thread",
         "PullRequestReviewCommentEvent": "commented on PR review",
         "PushEvent": "pushed",
         "ReleaseEvent": "released",
@@ -209,22 +210,43 @@ class Event:
             pr = payload.get("pull_request", {})
             number = pr.get("number", "")
             title = pr.get("title", "")[:50]
+            title_suffix = f": {title}" if title else ""
             if action == "opened":
-                if title:
-                    return f"opened PR #{number}: {title}"
-                return f"opened PR #{number}"
+                return f"opened PR #{number}{title_suffix}"
+            elif action == "reopened":
+                return f"reopened PR #{number}{title_suffix}"
             elif action == "closed":
                 merged = pr.get("merged", False)
                 if merged:
-                    if title:
-                        return f"merged PR #{number}: {title}"
-                    return f"merged PR #{number}"
-                if title:
-                    return f"closed PR #{number}: {title}"
-                return f"closed PR #{number}"
-            if title:
-                return f"{action} PR #{number}: {title}"
-            return f"{action} PR #{number}"
+                    return f"merged PR #{number}{title_suffix}"
+                return f"closed PR #{number}{title_suffix}"
+            elif action == "review_requested":
+                reviewer = payload.get("requested_reviewer", {}) or {}
+                team = payload.get("requested_team", {}) or {}
+                reviewer_name = reviewer.get("login")
+                team_name = team.get("name")
+                if reviewer_name:
+                    return f"requested review from {reviewer_name} on PR #{number}{title_suffix}"
+                if team_name:
+                    return f"requested review from team {team_name} on PR #{number}{title_suffix}"
+                return f"requested review on PR #{number}{title_suffix}"
+            elif action == "review_request_removed":
+                reviewer = payload.get("requested_reviewer", {}) or {}
+                team = payload.get("requested_team", {}) or {}
+                reviewer_name = reviewer.get("login")
+                team_name = team.get("name")
+                if reviewer_name:
+                    return f"removed review request for {reviewer_name} on PR #{number}{title_suffix}"
+                if team_name:
+                    return f"removed review request for team {team_name} on PR #{number}{title_suffix}"
+                return f"removed review request on PR #{number}{title_suffix}"
+            elif action == "ready_for_review":
+                return f"marked PR #{number} ready for review{title_suffix}"
+            elif action == "converted_to_draft":
+                return f"converted PR #{number} to draft{title_suffix}"
+            elif action == "synchronize":
+                return f"updated PR #{number} with new commits{title_suffix}"
+            return f"{action} PR #{number}{title_suffix}"
 
         elif self.type == "PullRequestReviewEvent":
             action = payload.get("action", "")
@@ -252,6 +274,18 @@ class Event:
             if title:
                 return f"commented on PR #{number}: {title}"
             return f"commented on PR #{number}"
+
+        elif self.type == "PullRequestReviewThreadEvent":
+            action = payload.get("action", "")
+            pr = payload.get("pull_request", {})
+            number = pr.get("number", "")
+            title = pr.get("title", "")[:50]
+            title_suffix = f": {title}" if title else ""
+            if action == "resolved":
+                return f"resolved review thread on PR #{number}{title_suffix}"
+            elif action == "unresolved":
+                return f"unresolved review thread on PR #{number}{title_suffix}"
+            return f"{action} review thread on PR #{number}{title_suffix}"
 
         elif self.type == "ReleaseEvent":
             action = payload.get("action", "")
@@ -344,7 +378,27 @@ class Event:
             if number:
                 return f"{base_url}/pull/{number}"
 
-        elif self.type == "PullRequestReviewEvent" or self.type == "PullRequestReviewCommentEvent":
+        elif self.type == "PullRequestReviewCommentEvent":
+            comment = self.payload.get("comment", {})
+            html_url = comment.get("html_url")
+            if html_url:
+                return html_url
+            pr = self.payload.get("pull_request", {})
+            number = pr.get("number")
+            if number:
+                return f"{base_url}/pull/{number}"
+
+        elif self.type == "PullRequestReviewThreadEvent":
+            thread = self.payload.get("thread", {})
+            html_url = thread.get("html_url")
+            if html_url:
+                return html_url
+            pr = self.payload.get("pull_request", {})
+            number = pr.get("number")
+            if number:
+                return f"{base_url}/pull/{number}"
+
+        elif self.type == "PullRequestReviewEvent":
             pr = self.payload.get("pull_request", {})
             number = pr.get("number")
             if number:

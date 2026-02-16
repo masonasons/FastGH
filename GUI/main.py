@@ -432,7 +432,7 @@ class MainGui(wx.Frame):
                 self._open_feed_issue(owner, repo_name, number)
                 return
 
-        elif feed_event.type in ("PullRequestEvent", "PullRequestReviewEvent", "PullRequestReviewCommentEvent"):
+        elif feed_event.type in ("PullRequestEvent", "PullRequestReviewEvent", "PullRequestReviewCommentEvent", "PullRequestReviewThreadEvent"):
             pr = payload.get("pull_request", {})
             number = pr.get("number")
             if number:
@@ -453,7 +453,7 @@ class MainGui(wx.Frame):
                 self._open_feed_discussion(owner, repo_name, number)
                 return
 
-        elif feed_event.type == "PushEvent":
+        elif feed_event.type in ("PushEvent", "CommitCommentEvent"):
             self._open_feed_commits(owner, repo_name)
             return
 
@@ -461,7 +461,7 @@ class MainGui(wx.Frame):
             self._open_feed_releases(owner, repo_name)
             return
 
-        elif feed_event.type in ("WatchEvent", "ForkEvent", "CreateEvent", "PublicEvent"):
+        elif feed_event.type in ("WatchEvent", "ForkEvent", "CreateEvent", "PublicEvent", "GollumEvent", "MemberEvent"):
             # For repo-level events, show the repo dialog
             self._open_feed_repo_direct(owner, repo_name)
             return
@@ -867,7 +867,7 @@ class MainGui(wx.Frame):
 
     def _extract_feed_pr_key(self, event):
         """Extract a normalized key for PR-related feed events."""
-        if event.type not in ("PullRequestEvent", "PullRequestReviewEvent", "PullRequestReviewCommentEvent"):
+        if event.type not in ("PullRequestEvent", "PullRequestReviewEvent", "PullRequestReviewCommentEvent", "PullRequestReviewThreadEvent"):
             return None
 
         pr = event.payload.get("pull_request", {}) or {}
