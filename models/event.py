@@ -53,6 +53,8 @@ class Event:
         "CommitCommentEvent": "commented on a commit",
         "CreateEvent": "created",
         "DeleteEvent": "deleted",
+        "DiscussionCommentEvent": "commented on discussion",
+        "DiscussionEvent": "discussion",
         "ForkEvent": "forked",
         "GollumEvent": "updated wiki",
         "IssueCommentEvent": "commented on issue",
@@ -142,6 +144,28 @@ class Event:
             ref_type = payload.get("ref_type", "")
             ref = payload.get("ref", "")
             return f"deleted {ref_type} {ref}"
+
+        elif self.type == "DiscussionEvent":
+            action = payload.get("action", "")
+            discussion = payload.get("discussion", {})
+            number = discussion.get("number", "")
+            title = discussion.get("title", "")[:50]
+            if title:
+                return f"{action} discussion #{number}: {title}"
+            return f"{action} discussion #{number}"
+
+        elif self.type == "DiscussionCommentEvent":
+            action = payload.get("action", "created")
+            discussion = payload.get("discussion", {})
+            number = discussion.get("number", "")
+            title = discussion.get("title", "")[:50]
+            if action in ("created", "edited"):
+                if title:
+                    return f"commented on discussion #{number}: {title}"
+                return f"commented on discussion #{number}"
+            if title:
+                return f"{action} comment on discussion #{number}: {title}"
+            return f"{action} comment on discussion #{number}"
 
         elif self.type == "PushEvent":
             # size can be 0 for force pushes, use distinct_size or commits array as fallback
@@ -281,6 +305,28 @@ class Event:
             number = issue.get("number")
             if number:
                 return f"{base_url}/issues/{number}"
+
+        elif self.type == "DiscussionEvent":
+            discussion = self.payload.get("discussion", {})
+            html_url = discussion.get("html_url")
+            if html_url:
+                return html_url
+            number = discussion.get("number")
+            if number:
+                return f"{base_url}/discussions/{number}"
+
+        elif self.type == "DiscussionCommentEvent":
+            comment = self.payload.get("comment", {})
+            html_url = comment.get("html_url")
+            if html_url:
+                return html_url
+            discussion = self.payload.get("discussion", {})
+            html_url = discussion.get("html_url")
+            if html_url:
+                return html_url
+            number = discussion.get("number")
+            if number:
+                return f"{base_url}/discussions/{number}"
 
         elif self.type == "PullRequestEvent":
             pr = self.payload.get("pull_request", {})

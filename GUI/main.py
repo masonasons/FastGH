@@ -435,6 +435,20 @@ class MainGui(wx.Frame):
                 self._open_feed_pr(owner, repo_name, number)
                 return
 
+        elif feed_event.type in ("DiscussionEvent", "DiscussionCommentEvent", "Discussion"):
+            discussion = payload.get("discussion", {})
+            number = discussion.get("number")
+            if not number:
+                discussion_url = (
+                    discussion.get("html_url")
+                    or payload.get("comment", {}).get("html_url")
+                    or feed_event.get_web_url()
+                )
+                number = self._extract_discussion_number(discussion_url)
+            if number:
+                self._open_feed_discussion(owner, repo_name, number)
+                return
+
         elif feed_event.type == "PushEvent":
             self._open_feed_commits(owner, repo_name)
             return
@@ -491,6 +505,44 @@ class MainGui(wx.Frame):
         self.status_bar.SetStatusText("Ready")
         from GUI.pullrequests import ViewPullRequestDialog
         dlg = ViewPullRequestDialog(self, repo, pr, can_merge)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def _extract_discussion_number(self, url: str) -> int | None:
+        """Extract discussion number from a discussion URL."""
+        if not url:
+            return None
+
+        parts = url.rstrip("/").split("/")
+        for i, part in enumerate(parts):
+            if part == "discussions" and i + 1 < len(parts):
+                try:
+                    return int(parts[i + 1])
+                except ValueError:
+                    return None
+        return None
+
+    def _open_feed_discussion(self, owner: str, repo_name: str, number: int):
+        """Open a discussion from the feed."""
+        def fetch_and_show():
+            discussion = self.app.currentAccount.get_discussion(owner, repo_name, number, comments_first=50)
+            if discussion:
+                wx.CallAfter(self._show_discussion_dialog, owner, repo_name, discussion)
+            else:
+                reason = self.app.currentAccount.get_last_error()
+                message = f"Could not load discussion #{number}."
+                if reason:
+                    message += f"\n\nReason: {reason}"
+                wx.CallAfter(wx.MessageBox, message, "Error", wx.OK | wx.ICON_ERROR)
+
+        self.status_bar.SetStatusText(f"Loading discussion #{number}...")
+        threading.Thread(target=fetch_and_show, daemon=True).start()
+
+    def _show_discussion_dialog(self, owner: str, repo_name: str, discussion):
+        """Show the discussion dialog."""
+        self.status_bar.SetStatusText("Ready")
+        from GUI.discussions import ViewDiscussionDialog
+        dlg = ViewDiscussionDialog(self, owner, repo_name, discussion)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -1101,18 +1153,22 @@ class MainGui(wx.Frame):
                     number = int(parts[-1])
                 except ValueError:
                     pass
+        if subject_type == "Discussion" and not number:
+            number = self._extract_discussion_number(notification.get_web_url())
 
         # Handle different notification types
         if subject_type == "Issue" and number:
             self._open_notification_issue(owner, repo_name, number)
         elif subject_type == "PullRequest" and number:
             self._open_notification_pr(owner, repo_name, number)
+        elif subject_type == "Discussion" and number:
+            self._open_notification_discussion(owner, repo_name, number)
         elif subject_type == "Release":
             self._open_notification_releases(owner, repo_name)
         elif subject_type == "Commit":
             self._open_notification_commits(owner, repo_name)
         else:
-            # Fallback to browser for unsupported types (Discussion, etc.)
+            # Fallback to browser for unsupported types.
             url = notification.get_web_url()
             if url:
                 webbrowser.open(url)
@@ -1146,6 +1202,10 @@ class MainGui(wx.Frame):
 
         self.status_bar.SetStatusText(f"Loading PR #{number}...")
         threading.Thread(target=fetch_and_show, daemon=True).start()
+
+    def _open_notification_discussion(self, owner: str, repo_name: str, number: int):
+        """Open a discussion from notification."""
+        self._open_feed_discussion(owner, repo_name, number)
 
     def _open_notification_releases(self, owner: str, repo_name: str):
         """Open releases dialog from notification."""
