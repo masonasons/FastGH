@@ -187,6 +187,16 @@ class Event:
             issue = payload.get("issue", {})
             number = issue.get("number", "")
             title = issue.get("title", "")[:50]
+            label = payload.get("label", {}) or {}
+            label_name = label.get("name", "")
+            if action == "labeled" and label_name:
+                if title:
+                    return f"labeled issue #{number} [{label_name}]: {title}"
+                return f"labeled issue #{number} [{label_name}]"
+            if action == "unlabeled" and label_name:
+                if title:
+                    return f"unlabeled issue #{number} [{label_name}]: {title}"
+                return f"unlabeled issue #{number} [{label_name}]"
             if title:
                 return f"{action} issue #{number}: {title}"
             return f"{action} issue #{number}"
@@ -209,6 +219,8 @@ class Event:
             pr = payload.get("pull_request", {})
             number = pr.get("number", "")
             title = pr.get("title", "")[:50]
+            label = payload.get("label", {}) or {}
+            label_name = label.get("name", "")
             if action == "opened":
                 if title:
                     return f"opened PR #{number}: {title}"
@@ -222,6 +234,14 @@ class Event:
                 if title:
                     return f"closed PR #{number}: {title}"
                 return f"closed PR #{number}"
+            elif action == "labeled" and label_name:
+                if title:
+                    return f"labeled PR #{number} [{label_name}]: {title}"
+                return f"labeled PR #{number} [{label_name}]"
+            elif action == "unlabeled" and label_name:
+                if title:
+                    return f"unlabeled PR #{number} [{label_name}]: {title}"
+                return f"unlabeled PR #{number} [{label_name}]"
             if title:
                 return f"{action} PR #{number}: {title}"
             return f"{action} PR #{number}"
