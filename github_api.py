@@ -785,6 +785,20 @@ class GitHubAccount:
                     login
                     avatarUrl
                   }
+                  replies(first: 50) {
+                    nodes {
+                      id
+                      databaseId
+                      body
+                      url
+                      createdAt
+                      updatedAt
+                      author {
+                        login
+                        avatarUrl
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -836,6 +850,20 @@ class GitHubAccount:
                     login
                     avatarUrl
                   }
+                  replies(first: 50) {
+                    nodes {
+                      id
+                      databaseId
+                      body
+                      url
+                      createdAt
+                      updatedAt
+                      author {
+                        login
+                        avatarUrl
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -862,7 +890,7 @@ class GitHubAccount:
         nodes = comments_connection.get("nodes", []) or []
         page_info = comments_connection.get("pageInfo", {}) or {}
 
-        comments = [DiscussionComment.from_graphql(item) for item in nodes]
+        comments = Discussion._flatten_comment_nodes(nodes)
         has_next_page = page_info.get("hasNextPage", False)
         end_cursor = page_info.get("endCursor")
         self._set_last_error("")

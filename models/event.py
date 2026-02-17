@@ -159,7 +159,13 @@ class Event:
             discussion = payload.get("discussion", {})
             number = discussion.get("number", "")
             title = discussion.get("title", "")[:50]
+            comment = payload.get("comment", {}) or {}
+            is_reply = bool(comment.get("in_reply_to_id") or comment.get("reply_to_id"))
             if action in ("created", "edited"):
+                if is_reply and title:
+                    return f"replied in discussion #{number}: {title}"
+                if is_reply:
+                    return f"replied in discussion #{number}"
                 if title:
                     return f"commented on discussion #{number}: {title}"
                 return f"commented on discussion #{number}"

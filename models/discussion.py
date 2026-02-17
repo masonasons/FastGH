@@ -46,9 +46,16 @@ class DiscussionComment:
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     url: str = ""
+    is_reply: bool = False
+    parent_author_login: str = ""
 
     @classmethod
-    def from_graphql(cls, data: dict) -> "DiscussionComment":
+    def from_graphql(
+        cls,
+        data: dict,
+        is_reply: bool = False,
+        parent_author_login: str = ""
+    ) -> "DiscussionComment":
         return cls(
             id=data.get("id", ""),
             database_id=data.get("databaseId"),
@@ -56,7 +63,9 @@ class DiscussionComment:
             author=_parse_author(data.get("author")),
             created_at=_parse_datetime(data.get("createdAt")),
             updated_at=_parse_datetime(data.get("updatedAt")),
-            url=data.get("url", "")
+            url=data.get("url", ""),
+            is_reply=is_reply,
+            parent_author_login=parent_author_login
         )
 
     def _format_relative_time(self, dt: datetime) -> str:
@@ -103,6 +112,24 @@ class Discussion:
     comments_has_next_page: bool = False
     comments_end_cursor: Optional[str] = None
 
+    @staticmethod
+    def _flatten_comment_nodes(comment_nodes: list[dict]) -> list[DiscussionComment]:
+        """Flatten top-level comments and their replies into one list."""
+        comments: list[DiscussionComment] = []
+        for item in comment_nodes:
+            top = DiscussionComment.from_graphql(item)
+            comments.append(top)
+            replies = (item.get("replies") or {}).get("nodes", []) or []
+            for reply in replies:
+                comments.append(
+                    DiscussionComment.from_graphql(
+                        reply,
+                        is_reply=True,
+                        parent_author_login=top.author.login
+                    )
+                )
+        return comments
+
     @classmethod
     def from_graphql(cls, data: dict) -> "Discussion":
         comments_connection = data.get("comments", {}) or {}
@@ -121,7 +148,7 @@ class Discussion:
             created_at=_parse_datetime(data.get("createdAt")),
             updated_at=_parse_datetime(data.get("updatedAt")),
             url=data.get("url", ""),
-            comments=[DiscussionComment.from_graphql(item) for item in comment_nodes],
+            comments=cls._flatten_comment_nodes(comment_nodes),
             comments_has_next_page=page_info.get("hasNextPage", False),
             comments_end_cursor=page_info.get("endCursor")
         )
