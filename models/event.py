@@ -189,6 +189,10 @@ class Event:
             title = issue.get("title", "")[:50]
             label = payload.get("label", {}) or {}
             label_name = label.get("name", "")
+            assignee = payload.get("assignee", {}) or {}
+            assignee_login = assignee.get("login", "")
+            milestone = payload.get("milestone", {}) or {}
+            milestone_title = milestone.get("title", "")
             if action == "labeled" and label_name:
                 if title:
                     return f"labeled issue #{number} [{label_name}]: {title}"
@@ -197,6 +201,42 @@ class Event:
                 if title:
                     return f"unlabeled issue #{number} [{label_name}]: {title}"
                 return f"unlabeled issue #{number} [{label_name}]"
+            if action == "assigned" and assignee_login:
+                if title:
+                    return f"assigned {assignee_login} to issue #{number}: {title}"
+                return f"assigned {assignee_login} to issue #{number}"
+            if action == "unassigned" and assignee_login:
+                if title:
+                    return f"unassigned {assignee_login} from issue #{number}: {title}"
+                return f"unassigned {assignee_login} from issue #{number}"
+            if action == "milestoned" and milestone_title:
+                if title:
+                    return f"milestoned issue #{number} [{milestone_title}]: {title}"
+                return f"milestoned issue #{number} [{milestone_title}]"
+            if action == "demilestoned" and milestone_title:
+                if title:
+                    return f"demilestoned issue #{number} [{milestone_title}]: {title}"
+                return f"demilestoned issue #{number} [{milestone_title}]"
+            if action == "pinned":
+                if title:
+                    return f"pinned issue #{number}: {title}"
+                return f"pinned issue #{number}"
+            if action == "unpinned":
+                if title:
+                    return f"unpinned issue #{number}: {title}"
+                return f"unpinned issue #{number}"
+            if action == "locked":
+                if title:
+                    return f"locked issue #{number}: {title}"
+                return f"locked issue #{number}"
+            if action == "unlocked":
+                if title:
+                    return f"unlocked issue #{number}: {title}"
+                return f"unlocked issue #{number}"
+            if action == "transferred":
+                if title:
+                    return f"transferred issue #{number}: {title}"
+                return f"transferred issue #{number}"
             if title:
                 return f"{action} issue #{number}: {title}"
             return f"{action} issue #{number}"
@@ -221,10 +261,18 @@ class Event:
             title = pr.get("title", "")[:50]
             label = payload.get("label", {}) or {}
             label_name = label.get("name", "")
+            assignee = payload.get("assignee", {}) or {}
+            assignee_login = assignee.get("login", "")
+            milestone = payload.get("milestone", {}) or {}
+            milestone_title = milestone.get("title", "")
             if action == "opened":
                 if title:
                     return f"opened PR #{number}: {title}"
                 return f"opened PR #{number}"
+            elif action == "reopened":
+                if title:
+                    return f"reopened PR #{number}: {title}"
+                return f"reopened PR #{number}"
             elif action == "closed":
                 merged = pr.get("merged", False)
                 if merged:
@@ -242,6 +290,74 @@ class Event:
                 if title:
                     return f"unlabeled PR #{number} [{label_name}]: {title}"
                 return f"unlabeled PR #{number} [{label_name}]"
+            elif action == "assigned" and assignee_login:
+                if title:
+                    return f"assigned {assignee_login} to PR #{number}: {title}"
+                return f"assigned {assignee_login} to PR #{number}"
+            elif action == "unassigned" and assignee_login:
+                if title:
+                    return f"unassigned {assignee_login} from PR #{number}: {title}"
+                return f"unassigned {assignee_login} from PR #{number}"
+            elif action == "milestoned" and milestone_title:
+                if title:
+                    return f"milestoned PR #{number} [{milestone_title}]: {title}"
+                return f"milestoned PR #{number} [{milestone_title}]"
+            elif action == "demilestoned" and milestone_title:
+                if title:
+                    return f"demilestoned PR #{number} [{milestone_title}]: {title}"
+                return f"demilestoned PR #{number} [{milestone_title}]"
+            elif action == "locked":
+                if title:
+                    return f"locked PR #{number}: {title}"
+                return f"locked PR #{number}"
+            elif action == "unlocked":
+                if title:
+                    return f"unlocked PR #{number}: {title}"
+                return f"unlocked PR #{number}"
+            elif action == "review_requested":
+                reviewer = payload.get("requested_reviewer", {}) or {}
+                team = payload.get("requested_team", {}) or {}
+                reviewer_name = reviewer.get("login")
+                team_name = team.get("name")
+                if reviewer_name:
+                    if title:
+                        return f"requested review from {reviewer_name} on PR #{number}: {title}"
+                    return f"requested review from {reviewer_name} on PR #{number}"
+                if team_name:
+                    if title:
+                        return f"requested review from team {team_name} on PR #{number}: {title}"
+                    return f"requested review from team {team_name} on PR #{number}"
+                if title:
+                    return f"requested review on PR #{number}: {title}"
+                return f"requested review on PR #{number}"
+            elif action == "review_request_removed":
+                reviewer = payload.get("requested_reviewer", {}) or {}
+                team = payload.get("requested_team", {}) or {}
+                reviewer_name = reviewer.get("login")
+                team_name = team.get("name")
+                if reviewer_name:
+                    if title:
+                        return f"removed review request for {reviewer_name} on PR #{number}: {title}"
+                    return f"removed review request for {reviewer_name} on PR #{number}"
+                if team_name:
+                    if title:
+                        return f"removed review request for team {team_name} on PR #{number}: {title}"
+                    return f"removed review request for team {team_name} on PR #{number}"
+                if title:
+                    return f"removed review request on PR #{number}: {title}"
+                return f"removed review request on PR #{number}"
+            elif action == "ready_for_review":
+                if title:
+                    return f"marked PR #{number} ready for review: {title}"
+                return f"marked PR #{number} ready for review"
+            elif action == "converted_to_draft":
+                if title:
+                    return f"converted PR #{number} to draft: {title}"
+                return f"converted PR #{number} to draft"
+            elif action == "synchronize":
+                if title:
+                    return f"updated PR #{number} with new commits: {title}"
+                return f"updated PR #{number} with new commits"
             if title:
                 return f"{action} PR #{number}: {title}"
             return f"{action} PR #{number}"
