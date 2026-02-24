@@ -277,6 +277,8 @@ class MainGui(wx.Frame):
         m_notifications = view_menu.Append(-1, self._menu_label("Notifications", "Ctrl+6"), "Show notifications")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(5), m_notifications)
         view_menu.AppendSeparator()
+        m_repo_sync_now = view_menu.Append(-1, self._menu_label("Run Repo Sync Now", "Ctrl+Shift+Y"), "Run configured repository sync now")
+        self.Bind(wx.EVT_MENU, self.on_repo_sync_now, m_repo_sync_now)
         m_mark_all_read = view_menu.Append(-1, self._menu_label("Mark All Notifications Read", "Ctrl+Shift+R"), "Mark all notifications as read")
         self.Bind(wx.EVT_MENU, self.on_mark_all_notifications_read, m_mark_all_read)
         menu_bar.Append(view_menu, "&View")
@@ -737,9 +739,9 @@ class MainGui(wx.Frame):
 
     def on_repo_sync_timer(self, event):
         """Handle repository auto-sync timer event."""
-        self.run_repo_sync_background()
+        self.run_repo_sync_background(manual=False)
 
-    def run_repo_sync_background(self):
+    def run_repo_sync_background(self, manual=False):
         """Run repository sync in background and publish short status text."""
         if self._repo_sync_running:
             return
@@ -750,21 +752,33 @@ class MainGui(wx.Frame):
                 results = self.app.repo_sync.sync_all_enabled() if self.app.repo_sync else []
                 if not results:
                     wx.CallAfter(self.status_bar.SetStatusText, "Repo sync: no enabled repositories")
+                    if manual and self.app.prefs.repo_sync_notify:
+                        wx.CallAfter(self.show_notification, "Repo Sync", "No enabled repositories configured.")
                     return
                 failed = [r for r in results if not r.ok]
                 if failed:
-                    wx.CallAfter(
-                        self.status_bar.SetStatusText,
-                        f"Repo sync: {len(results) - len(failed)}/{len(results)} succeeded",
-                    )
+                    summary = f"Repo sync: {len(results) - len(failed)}/{len(results)} succeeded"
+                    wx.CallAfter(self.status_bar.SetStatusText, summary)
+                    if self.app.prefs.repo_sync_notify:
+                        first = failed[0]
+                        wx.CallAfter(self.show_notification, "Repo Sync Errors", f"{summary}. First failure: {first.repo}")
                 else:
-                    wx.CallAfter(self.status_bar.SetStatusText, f"Repo sync: {len(results)} repositories synced")
+                    summary = f"Repo sync: {len(results)} repositories synced"
+                    wx.CallAfter(self.status_bar.SetStatusText, summary)
+                    if self.app.prefs.repo_sync_notify and manual:
+                        wx.CallAfter(self.show_notification, "Repo Sync Complete", summary)
             except Exception as exc:
                 wx.CallAfter(self.status_bar.SetStatusText, f"Repo sync error: {exc}")
+                if self.app.prefs.repo_sync_notify:
+                    wx.CallAfter(self.show_notification, "Repo Sync Error", str(exc))
             finally:
                 self._repo_sync_running = False
 
         threading.Thread(target=do_sync, daemon=True).start()
+
+    def on_repo_sync_now(self, event):
+        """Trigger repository sync immediately."""
+        self.run_repo_sync_background(manual=True)
 
     def show_notification(self, title: str, message: str):
         """Show an OS desktop notification."""
