@@ -24,7 +24,7 @@ class OptionsDialog(wx.Dialog):
         self.app = get_app()
         self.parent_window = parent
 
-        wx.Dialog.__init__(self, parent, title="Options", size=(500, 740))
+        wx.Dialog.__init__(self, parent, title="Options", size=(560, 860))
 
         self.init_ui()
         self.bind_events()
@@ -124,6 +124,49 @@ class OptionsDialog(wx.Dialog):
         git_sizer.Add(self.git_recursive_cb, 0, wx.LEFT | wx.BOTTOM, 10)
 
         main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Repository sync section
+        sync_box = wx.StaticBox(self.panel, label="Repository Sync")
+        sync_sizer = wx.StaticBoxSizer(sync_box, wx.VERTICAL)
+
+        self.repo_sync_enabled_cb = wx.CheckBox(
+            self.panel,
+            label="Enable scheduled auto sync for configured repositories"
+        )
+        sync_sizer.Add(self.repo_sync_enabled_cb, 0, wx.LEFT | wx.TOP, 10)
+
+        interval_row = wx.BoxSizer(wx.HORIZONTAL)
+        interval_label = wx.StaticText(self.panel, label="Sync interval:")
+        interval_row.Add(interval_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.repo_sync_interval_spin = wx.SpinCtrl(
+            self.panel,
+            min=0,
+            max=240,
+            initial=0,
+            style=wx.SP_ARROW_KEYS
+        )
+        self.repo_sync_interval_spin.SetToolTip("Minutes between sync runs (0 = disabled)")
+        interval_row.Add(self.repo_sync_interval_spin, 0, wx.RIGHT, 5)
+        interval_hint = wx.StaticText(self.panel, label="minutes (0 = disabled)")
+        interval_row.Add(interval_hint, 0, wx.ALIGN_CENTER_VERTICAL)
+        sync_sizer.Add(interval_row, 0, wx.ALL, 10)
+
+        self.repo_sync_use_tools_cb = wx.CheckBox(
+            self.panel,
+            label="Use .GITHUB repo bootstrap updater before git sync"
+        )
+        sync_sizer.Add(self.repo_sync_use_tools_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        tools_row = wx.BoxSizer(wx.HORIZONTAL)
+        tools_label = wx.StaticText(self.panel, label=".GITHUB tools path:")
+        tools_row.Add(tools_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.repo_sync_tools_path = wx.TextCtrl(self.panel, size=(300, -1))
+        tools_row.Add(self.repo_sync_tools_path, 1, wx.RIGHT, 5)
+        self.repo_sync_tools_browse_btn = wx.Button(self.panel, label="Brow&se...")
+        tools_row.Add(self.repo_sync_tools_browse_btn, 0)
+        sync_sizer.Add(tools_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 10)
+
+        main_sizer.Add(sync_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         # Notifications section
         notif_box = wx.StaticBox(self.panel, label="Desktop Notifications")
@@ -261,6 +304,7 @@ class OptionsDialog(wx.Dialog):
         self.apply_btn.Bind(wx.EVT_BUTTON, self.on_apply)
         self.browse_btn.Bind(wx.EVT_BUTTON, self.on_browse)
         self.git_browse_btn.Bind(wx.EVT_BUTTON, self.on_git_browse)
+        self.repo_sync_tools_browse_btn.Bind(wx.EVT_BUTTON, self.on_repo_sync_tools_browse)
 
         if HOTKEY_SUPPORTED:
             self.clear_hotkey_btn.Bind(wx.EVT_BUTTON, self.on_clear_hotkey)
@@ -279,6 +323,10 @@ class OptionsDialog(wx.Dialog):
         self.git_path.SetValue(self.app.prefs.git_path)
         self.git_org_structure_cb.SetValue(self.app.prefs.git_use_org_structure)
         self.git_recursive_cb.SetValue(self.app.prefs.git_clone_recursive)
+        self.repo_sync_enabled_cb.SetValue(self.app.prefs.repo_sync_enabled)
+        self.repo_sync_interval_spin.SetValue(self.app.prefs.repo_sync_interval_minutes)
+        self.repo_sync_use_tools_cb.SetValue(self.app.prefs.repo_sync_use_github_tools)
+        self.repo_sync_tools_path.SetValue(self.app.prefs.repo_sync_github_tools_path)
 
         # Notification settings
         self.notify_activity_cb.SetValue(self.app.prefs.notify_activity)
@@ -311,6 +359,10 @@ class OptionsDialog(wx.Dialog):
         self.app.prefs.git_path = self.git_path.GetValue()
         self.app.prefs.git_use_org_structure = self.git_org_structure_cb.GetValue()
         self.app.prefs.git_clone_recursive = self.git_recursive_cb.GetValue()
+        self.app.prefs.repo_sync_enabled = self.repo_sync_enabled_cb.GetValue()
+        self.app.prefs.repo_sync_interval_minutes = self.repo_sync_interval_spin.GetValue()
+        self.app.prefs.repo_sync_use_github_tools = self.repo_sync_use_tools_cb.GetValue()
+        self.app.prefs.repo_sync_github_tools_path = self.repo_sync_tools_path.GetValue().strip()
 
         # Save notification settings
         self.app.prefs.notify_activity = self.notify_activity_cb.GetValue()
@@ -327,6 +379,9 @@ class OptionsDialog(wx.Dialog):
             from GUI import main
             if main.window and hasattr(main.window, 'update_auto_refresh_timer'):
                 main.window.update_auto_refresh_timer()
+        from GUI import main
+        if main.window and hasattr(main.window, 'update_repo_sync_timer'):
+            main.window.update_repo_sync_timer()
 
         # Save hotkey if supported
         if HOTKEY_SUPPORTED:
@@ -414,6 +469,24 @@ class OptionsDialog(wx.Dialog):
 
         if dlg.ShowModal() == wx.ID_OK:
             self.git_path.SetValue(dlg.GetPath())
+
+        dlg.Destroy()
+
+    def on_repo_sync_tools_browse(self, event):
+        """Browse for .GITHUB tools path."""
+        current = self.repo_sync_tools_path.GetValue()
+        if not current or not os.path.isdir(current):
+            current = os.path.expanduser("~")
+
+        dlg = wx.DirDialog(
+            self,
+            "Select .GITHUB Tools Path",
+            defaultPath=current,
+            style=wx.DD_DEFAULT_STYLE
+        )
+
+        if dlg.ShowModal() == wx.ID_OK:
+            self.repo_sync_tools_path.SetValue(dlg.GetPath())
 
         dlg.Destroy()
 
