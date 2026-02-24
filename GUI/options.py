@@ -185,6 +185,9 @@ class OptionsDialog(wx.Dialog):
         self.notify_watched_cb = wx.CheckBox(self.panel, label="Notify on &watched repository updates")
         notif_sizer.Add(self.notify_watched_cb, 0, wx.LEFT | wx.TOP, 5)
 
+        self.notify_repo_sync_cb = wx.CheckBox(self.panel, label="Notify on repository &sync results")
+        notif_sizer.Add(self.notify_repo_sync_cb, 0, wx.LEFT | wx.TOP, 5)
+
         # Auto-refresh interval
         refresh_row = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -333,6 +336,7 @@ class OptionsDialog(wx.Dialog):
         self.notify_notifications_cb.SetValue(self.app.prefs.notify_notifications)
         self.notify_starred_cb.SetValue(self.app.prefs.notify_starred)
         self.notify_watched_cb.SetValue(self.app.prefs.notify_watched)
+        self.notify_repo_sync_cb.SetValue(self.app.prefs.repo_sync_notify)
         self.refresh_spin.SetValue(self.app.prefs.auto_refresh_interval)
 
         if HOTKEY_SUPPORTED:
@@ -369,6 +373,7 @@ class OptionsDialog(wx.Dialog):
         self.app.prefs.notify_notifications = self.notify_notifications_cb.GetValue()
         self.app.prefs.notify_starred = self.notify_starred_cb.GetValue()
         self.app.prefs.notify_watched = self.notify_watched_cb.GetValue()
+        self.app.prefs.repo_sync_notify = self.notify_repo_sync_cb.GetValue()
 
         old_interval = self.app.prefs.auto_refresh_interval
         new_interval = self.refresh_spin.GetValue()

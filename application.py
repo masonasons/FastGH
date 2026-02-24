@@ -109,6 +109,7 @@ class Application:
         self.prefs.repo_sync_interval_minutes = self.prefs.get("repo_sync_interval_minutes", 0)
         self.prefs.repo_sync_configs = self.prefs.get("repo_sync_configs", {})
         self.prefs.repo_sync_use_github_tools = self.prefs.get("repo_sync_use_github_tools", True)
+        self.prefs.repo_sync_notify = self.prefs.get("repo_sync_notify", True)
         if platform.system() == "Windows":
             default_tools_path = os.path.join(os.path.expanduser("~"), "dev", "apps", ".GITHUB")
         else:
