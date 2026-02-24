@@ -132,6 +132,9 @@ class MainGui(wx.Frame):
         # Auto-refresh timer
         self.auto_refresh_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.on_auto_refresh, self.auto_refresh_timer)
+        self.repo_sync_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_repo_sync_timer, self.repo_sync_timer)
+        self._repo_sync_running = False
 
         # Global hotkey handler
         self.keyboard_handler = None
@@ -149,6 +152,7 @@ class MainGui(wx.Frame):
 
         # Start auto-refresh timer if enabled
         self.update_auto_refresh_timer()
+        self.update_repo_sync_timer()
 
         # Check for updates on startup if enabled
         if self.app.prefs.check_for_updates:
@@ -273,6 +277,8 @@ class MainGui(wx.Frame):
         m_notifications = view_menu.Append(-1, self._menu_label("Notifications", "Ctrl+6"), "Show notifications")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(5), m_notifications)
         view_menu.AppendSeparator()
+        m_repo_sync_now = view_menu.Append(-1, self._menu_label("Run Repo Sync Now", "Ctrl+Shift+Y"), "Run configured repository sync now")
+        self.Bind(wx.EVT_MENU, self.on_repo_sync_now, m_repo_sync_now)
         m_mark_all_read = view_menu.Append(-1, self._menu_label("Mark All Notifications Read", "Ctrl+Shift+R"), "Mark all notifications as read")
         self.Bind(wx.EVT_MENU, self.on_mark_all_notifications_read, m_mark_all_read)
         menu_bar.Append(view_menu, "&View")
@@ -721,6 +727,58 @@ class MainGui(wx.Frame):
     def on_auto_refresh(self, event):
         """Handle auto-refresh timer event."""
         self.refresh_all()
+
+    def update_repo_sync_timer(self):
+        """Start or stop repository auto-sync timer based on settings."""
+        enabled = self.app.prefs.repo_sync_enabled
+        interval = self.app.prefs.repo_sync_interval_minutes
+        if enabled and interval > 0:
+            self.repo_sync_timer.Start(interval * 60 * 1000)
+        else:
+            self.repo_sync_timer.Stop()
+
+    def on_repo_sync_timer(self, event):
+        """Handle repository auto-sync timer event."""
+        self.run_repo_sync_background(manual=False)
+
+    def run_repo_sync_background(self, manual=False):
+        """Run repository sync in background and publish short status text."""
+        if self._repo_sync_running:
+            return
+        self._repo_sync_running = True
+
+        def do_sync():
+            try:
+                results = self.app.repo_sync.sync_all_enabled() if self.app.repo_sync else []
+                if not results:
+                    wx.CallAfter(self.status_bar.SetStatusText, "Repo sync: no enabled repositories")
+                    if manual and self.app.prefs.repo_sync_notify:
+                        wx.CallAfter(self.show_notification, "Repo Sync", "No enabled repositories configured.")
+                    return
+                failed = [r for r in results if not r.ok]
+                if failed:
+                    summary = f"Repo sync: {len(results) - len(failed)}/{len(results)} succeeded"
+                    wx.CallAfter(self.status_bar.SetStatusText, summary)
+                    if self.app.prefs.repo_sync_notify:
+                        first = failed[0]
+                        wx.CallAfter(self.show_notification, "Repo Sync Errors", f"{summary}. First failure: {first.repo}")
+                else:
+                    summary = f"Repo sync: {len(results)} repositories synced"
+                    wx.CallAfter(self.status_bar.SetStatusText, summary)
+                    if self.app.prefs.repo_sync_notify and manual:
+                        wx.CallAfter(self.show_notification, "Repo Sync Complete", summary)
+            except Exception as exc:
+                wx.CallAfter(self.status_bar.SetStatusText, f"Repo sync error: {exc}")
+                if self.app.prefs.repo_sync_notify:
+                    wx.CallAfter(self.show_notification, "Repo Sync Error", str(exc))
+            finally:
+                self._repo_sync_running = False
+
+        threading.Thread(target=do_sync, daemon=True).start()
+
+    def on_repo_sync_now(self, event):
+        """Trigger repository sync immediately."""
+        self.run_repo_sync_background(manual=True)
 
     def show_notification(self, title: str, message: str):
         """Show an OS desktop notification."""
