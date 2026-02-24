@@ -94,6 +94,7 @@ class Application:
         # Git clone options
         self.prefs.git_use_org_structure = self.prefs.get("git_use_org_structure", False)
         self.prefs.git_clone_recursive = self.prefs.get("git_clone_recursive", False)
+        self.prefs.git_lfs_enabled = self.prefs.get("git_lfs_enabled", True)
 
         # OS notification settings
         self.prefs.notify_activity = self.prefs.get("notify_activity", False)

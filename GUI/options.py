@@ -123,6 +123,16 @@ class OptionsDialog(wx.Dialog):
         )
         git_sizer.Add(self.git_recursive_cb, 0, wx.LEFT | wx.BOTTOM, 10)
 
+        self.git_lfs_cb = wx.CheckBox(
+            self.panel,
+            label="Enable Git &LFS support for clone/pull/sync"
+        )
+        self.git_lfs_cb.SetToolTip(
+            "Runs git lfs install/pull after clone/pull and during scheduled sync.\n"
+            "If git-lfs is not installed, operations continue with a warning."
+        )
+        git_sizer.Add(self.git_lfs_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
         main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         # Repository sync section
@@ -326,6 +336,7 @@ class OptionsDialog(wx.Dialog):
         self.git_path.SetValue(self.app.prefs.git_path)
         self.git_org_structure_cb.SetValue(self.app.prefs.git_use_org_structure)
         self.git_recursive_cb.SetValue(self.app.prefs.git_clone_recursive)
+        self.git_lfs_cb.SetValue(self.app.prefs.git_lfs_enabled)
         self.repo_sync_enabled_cb.SetValue(self.app.prefs.repo_sync_enabled)
         self.repo_sync_interval_spin.SetValue(self.app.prefs.repo_sync_interval_minutes)
         self.repo_sync_use_tools_cb.SetValue(self.app.prefs.repo_sync_use_github_tools)
@@ -363,6 +374,7 @@ class OptionsDialog(wx.Dialog):
         self.app.prefs.git_path = self.git_path.GetValue()
         self.app.prefs.git_use_org_structure = self.git_org_structure_cb.GetValue()
         self.app.prefs.git_clone_recursive = self.git_recursive_cb.GetValue()
+        self.app.prefs.git_lfs_enabled = self.git_lfs_cb.GetValue()
         self.app.prefs.repo_sync_enabled = self.repo_sync_enabled_cb.GetValue()
         self.app.prefs.repo_sync_interval_minutes = self.repo_sync_interval_spin.GetValue()
         self.app.prefs.repo_sync_use_github_tools = self.repo_sync_use_tools_cb.GetValue()
