@@ -590,7 +590,16 @@ class ViewRepoDialog(wx.Dialog):
                 final_output[0] = "".join(output_lines)
                 success[0] = process.returncode == 0 and not progress_dlg.cancelled
 
-                if not success[0] and not progress_dlg.cancelled:
+                if success[0] and self.app.prefs.git_lfs_enabled and operation in ("clone", "pull"):
+                    lfs_repo_path = self.get_repo_path() if operation == "clone" else cwd
+                    lfs_success, lfs_msg = self._run_lfs_post_sync(lfs_repo_path)
+                    if lfs_msg:
+                        wx.CallAfter(progress_dlg.append_output, "\n" + lfs_msg + "\n")
+                    if not lfs_success:
+                        error_message[0] = lfs_msg or "git lfs operation failed"
+                        success[0] = False
+
+                if not success[0] and not progress_dlg.cancelled and not error_message[0]:
                     error_message[0] = final_output[0]
 
             except FileNotFoundError:
@@ -638,6 +647,42 @@ class ViewRepoDialog(wx.Dialog):
                 f"{operation.capitalize()} Failed",
                 wx.OK | wx.ICON_ERROR
             )
+
+    def _run_lfs_post_sync(self, repo_path):
+        """Run optional git lfs steps after clone/pull."""
+        if not os.path.isdir(os.path.join(repo_path, ".git")):
+            return False, f"LFS skipped: repo path not found: {repo_path}"
+
+        creationflags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+
+        def run_cmd(args):
+            result = subprocess.run(
+                ["git"] + args,
+                cwd=repo_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creationflags
+            )
+            output = (result.stdout or result.stderr or "").strip()
+            return result.returncode, output
+
+        code, _ = run_cmd(["lfs", "version"])
+        if code != 0:
+            return True, "Git LFS not installed; continuing without LFS objects."
+
+        code, out1 = run_cmd(["lfs", "install", "--local"])
+        if code != 0:
+            return False, f"git lfs install failed:\n{out1}"
+
+        code, out2 = run_cmd(["lfs", "pull"])
+        if code != 0:
+            return False, f"git lfs pull failed:\n{out2}"
+
+        msg = "Git LFS sync completed."
+        if out2:
+            msg += f"\n{out2}"
+        return True, msg
 
     def on_view_files(self, event):
         """Open file browser dialog."""

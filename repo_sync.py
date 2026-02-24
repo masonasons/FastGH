@@ -27,6 +27,7 @@ class RepoSyncManager:
     PREF_INTERVAL = "repo_sync_interval_minutes"
     PREF_USE_GITHUB_TOOLS = "repo_sync_use_github_tools"
     PREF_GITHUB_TOOLS_PATH = "repo_sync_github_tools_path"
+    PREF_GIT_LFS_ENABLED = "git_lfs_enabled"
 
     def __init__(self, prefs: Any):
         self.prefs = prefs
@@ -114,6 +115,7 @@ class RepoSyncManager:
             self._run_git(repo_path, ["fetch", "--all", "--prune"])
             if cfg.get("auto_pull", True):
                 self._run_git(repo_path, ["pull", "--ff-only"])
+                self._run_lfs_sync(repo_path)
             push_message = "push disabled"
             if cfg.get("auto_push", False):
                 push_message = self._maybe_push(repo_path)
@@ -176,6 +178,31 @@ class RepoSyncManager:
             err = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(f"{' '.join(cmd)} failed for {repo_path}\n{err}")
         return (result.stdout or "").strip()
+
+    def _run_git_allow_fail(self, repo_path: str, args: list[str]) -> tuple[bool, str]:
+        cmd = ["git"] + args
+        creationflags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+        result = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            creationflags=creationflags,
+        )
+        output = (result.stdout or result.stderr or "").strip()
+        return result.returncode == 0, output
+
+    def _run_lfs_sync(self, repo_path: str):
+        if not self.prefs.get(self.PREF_GIT_LFS_ENABLED, True):
+            return
+
+        ok, _ = self._run_git_allow_fail(repo_path, ["lfs", "version"])
+        if not ok:
+            return
+
+        self._run_git(repo_path, ["lfs", "install", "--local"])
+        # Pull includes fetch + checkout of LFS objects.
+        self._run_git(repo_path, ["lfs", "pull"])
 
     def _has_uncommitted_changes(self, repo_path: str) -> bool:
         status = self._run_git(repo_path, ["status", "--porcelain"])
