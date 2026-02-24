@@ -13,6 +13,7 @@ import config
 import wx
 import requests
 from version import APP_NAME, APP_SHORTNAME, APP_VERSION, APP_AUTHOR
+from repo_sync import RepoSyncManager
 
 shortname = APP_SHORTNAME
 name = APP_NAME
@@ -31,6 +32,7 @@ class Application:
         self.confpath = ""
         self.errors = []
         self.currentAccount = None
+        self.repo_sync = None
         self._initialized = False
 
     @classmethod
@@ -101,6 +103,18 @@ class Application:
 
         # Auto-refresh interval in minutes (0 = disabled)
         self.prefs.auto_refresh_interval = self.prefs.get("auto_refresh_interval", 0)
+
+        # Repository auto-sync settings
+        self.prefs.repo_sync_enabled = self.prefs.get("repo_sync_enabled", False)
+        self.prefs.repo_sync_interval_minutes = self.prefs.get("repo_sync_interval_minutes", 0)
+        self.prefs.repo_sync_configs = self.prefs.get("repo_sync_configs", {})
+        self.prefs.repo_sync_use_github_tools = self.prefs.get("repo_sync_use_github_tools", True)
+        if platform.system() == "Windows":
+            default_tools_path = os.path.join(os.path.expanduser("~"), "dev", "apps", ".GITHUB")
+        else:
+            default_tools_path = os.path.expanduser("~/DEV/APPS/.GITHUB")
+        self.prefs.repo_sync_github_tools_path = self.prefs.get("repo_sync_github_tools_path", default_tools_path)
+        self.repo_sync = RepoSyncManager(self.prefs)
 
         # Check for updates on startup
         self.prefs.check_for_updates = self.prefs.get("check_for_updates", True)
