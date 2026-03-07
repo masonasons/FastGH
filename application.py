@@ -200,8 +200,9 @@ class Application:
     def question(self, title, text, parent=None):
         """Show a yes/no question dialog."""
         dlg = wx.MessageDialog(parent, text, title, wx.YES_NO | wx.ICON_QUESTION)
-        dlg.Raise()
-        dlg.RequestUserAttention()
+        if platform.system() != "Darwin":
+            dlg.Raise()
+            dlg.RequestUserAttention()
         result = dlg.ShowModal()
         dlg.Destroy()
         return 1 if result == wx.ID_YES else 2
@@ -209,8 +210,9 @@ class Application:
     def alert(self, message, caption="", parent=None):
         """Show an alert dialog."""
         dlg = wx.MessageDialog(parent, message, caption, wx.OK)
-        dlg.Raise()
-        dlg.RequestUserAttention()
+        if platform.system() != "Darwin":
+            dlg.Raise()
+            dlg.RequestUserAttention()
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -389,7 +391,8 @@ class Application:
                     maximum=100,
                     style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_CAN_ABORT | wx.PD_ELAPSED_TIME | wx.PD_REMAINING_TIME
                 )
-                progress_data['dialog'].Raise()
+                if platform.system() != "Darwin":
+                    progress_data['dialog'].Raise()
 
             def update_progress(downloaded, total):
                 if progress_data['dialog'] and total > 0:
@@ -488,7 +491,8 @@ del "%~f0"
                     maximum=100,
                     style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_CAN_ABORT | wx.PD_ELAPSED_TIME | wx.PD_REMAINING_TIME
                 )
-                progress_data['dialog'].Raise()
+                if platform.system() != "Darwin":
+                    progress_data['dialog'].Raise()
 
             def update_progress(downloaded, total):
                 if progress_data['dialog'] and total > 0:
