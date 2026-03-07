@@ -233,6 +233,8 @@ class CommitsDialog(wx.Dialog):
             else:
                 for commit in commits:
                     self.commits_list.Append(commit.format_display())
+                self.commits_list.SetSelection(0)
+                self.show_commit_preview(commits[0])
 
             # Focus on commits list only on initial load
             if self.initial_load:

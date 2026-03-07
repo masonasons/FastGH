@@ -141,9 +141,11 @@ class Commit:
                 date_str = local_time.strftime("%Y-%m-%d %H:%M")
             else:
                 date_str = "Unknown"
-            return f"{self.first_line} - {author_name}, {date_str} [{self.short_sha}]"
+            subject = (self.first_line or "No commit message").strip()
+            return f"{subject}. Author {author_name}. Date {date_str}. Commit {self.short_sha}."
         except Exception:
-            return f"{self.first_line} [{self.short_sha}]"
+            subject = (self.first_line or "No commit message").strip()
+            return f"{subject}. Commit {self.short_sha}."
 
     def _format_relative_time(self, dt: datetime) -> str:
         """Format datetime as relative time."""
