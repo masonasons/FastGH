@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -28,6 +29,8 @@ class RepoSyncManager:
     PREF_USE_GITHUB_TOOLS = "repo_sync_use_github_tools"
     PREF_GITHUB_TOOLS_PATH = "repo_sync_github_tools_path"
     PREF_GIT_LFS_ENABLED = "git_lfs_enabled"
+    _REPO_PROVIDER_RE = re.compile(r"(?:(?P<scheme>https?)://|git@|ssh://git@)(?P<host>[^/:]+)")
+    _OS_HINTS = ("windows", "mac", "macos", "osx", "linux", "ubuntu", "ios", "android")
 
     def __init__(self, prefs: Any):
         self.prefs = prefs
@@ -103,25 +106,48 @@ class RepoSyncManager:
     def sync_one(self, full_name: str, cfg: dict | None = None) -> RepoSyncResult:
         cfg = cfg or self.get_repo_config(full_name)
         repo_path = cfg.get("path", "")
+        return self.sync_path(
+            repo_path=repo_path,
+            repo_label=full_name,
+            auto_pull=bool(cfg.get("auto_pull", True)),
+            auto_push=bool(cfg.get("auto_push", False)),
+        )
+
+    def sync_path(
+        self,
+        repo_path: str,
+        repo_label: str = "external",
+        auto_pull: bool = True,
+        auto_push: bool = False,
+    ) -> RepoSyncResult:
+        """Sync any local git repository path, including external/non-GitHub remotes."""
         if not repo_path:
-            return RepoSyncResult(full_name, False, "No local path configured.")
+            return RepoSyncResult(repo_label, False, "No local path configured.")
         if not os.path.isdir(repo_path):
-            return RepoSyncResult(full_name, False, f"Missing path: {repo_path}")
+            return RepoSyncResult(repo_label, False, f"Missing path: {repo_path}")
         if not os.path.isdir(os.path.join(repo_path, ".git")):
-            return RepoSyncResult(full_name, False, f"Not a git repo: {repo_path}")
+            return RepoSyncResult(repo_label, False, f"Not a git repo: {repo_path}")
 
         try:
             self._maybe_run_repo_update(repo_path)
             self._run_git(repo_path, ["fetch", "--all", "--prune"])
-            if cfg.get("auto_pull", True):
+            incoming_count = self._incoming_count(repo_path)
+            os_hints = self._detect_cross_os_hints(repo_path) if incoming_count > 0 else []
+            if auto_pull:
                 self._run_git(repo_path, ["pull", "--ff-only"])
                 self._run_lfs_sync(repo_path)
             push_message = "push disabled"
-            if cfg.get("auto_push", False):
+            if auto_push:
                 push_message = self._maybe_push(repo_path)
-            return RepoSyncResult(full_name, True, f"sync complete ({push_message})")
+            provider = self._remote_provider_name(repo_path)
+            remote_note = ""
+            if incoming_count > 0:
+                remote_note = f"; incoming={incoming_count}"
+                if os_hints:
+                    remote_note += f"; os-hints={','.join(os_hints)}"
+            return RepoSyncResult(repo_label, True, f"sync complete ({push_message}; remote={provider}{remote_note})")
         except RuntimeError as exc:
-            return RepoSyncResult(full_name, False, str(exc))
+            return RepoSyncResult(repo_label, False, str(exc))
 
     def run_repo_update(self, repo_path: str):
         """Run external repo update helper for one repository path when configured."""
@@ -243,3 +269,44 @@ class RepoSyncManager:
 
         self._run_git(repo_path, ["push"])
         return f"pushed ({ahead} commit(s) ahead)"
+
+    def _remote_provider_name(self, repo_path: str) -> str:
+        ok, url = self._run_git_allow_fail(repo_path, ["config", "--get", "remote.origin.url"])
+        if not ok or not url.strip():
+            return "unknown"
+        host = self._remote_host(url.strip())
+        if not host:
+            return "unknown"
+        if host.endswith("github.com"):
+            return "github"
+        if host.endswith("gitlab.com"):
+            return "gitlab"
+        return host
+
+    def _remote_host(self, remote_url: str) -> str:
+        match = self._REPO_PROVIDER_RE.search(remote_url.strip())
+        if not match:
+            return ""
+        return (match.group("host") or "").lower()
+
+    def _incoming_count(self, repo_path: str) -> int:
+        if not self._has_upstream(repo_path):
+            return 0
+        raw = self._run_git(repo_path, ["rev-list", "--count", "HEAD..@{u}"]).strip()
+        try:
+            return int(raw)
+        except ValueError:
+            return 0
+
+    def _detect_cross_os_hints(self, repo_path: str) -> list[str]:
+        if not self._has_upstream(repo_path):
+            return []
+        ok, output = self._run_git_allow_fail(repo_path, ["log", "--max-count=25", "--format=%s%n%b", "HEAD..@{u}"])
+        if not ok:
+            return []
+        text = output.lower()
+        hints: list[str] = []
+        for marker in self._OS_HINTS:
+            if marker in text and marker not in hints:
+                hints.append(marker)
+        return hints

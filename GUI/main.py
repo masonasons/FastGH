@@ -279,6 +279,8 @@ class MainGui(wx.Frame):
         view_menu.AppendSeparator()
         m_repo_sync_now = view_menu.Append(-1, self._menu_label("Run Repo Sync Now", "Ctrl+Shift+Y"), "Run configured repository sync now")
         self.Bind(wx.EVT_MENU, self.on_repo_sync_now, m_repo_sync_now)
+        m_repo_sync_external = view_menu.Append(-1, self._menu_label("Sync External Local Repo...", "Ctrl+Shift+E"), "Sync any local git repository path")
+        self.Bind(wx.EVT_MENU, self.on_repo_sync_external, m_repo_sync_external)
         m_mark_all_read = view_menu.Append(-1, self._menu_label("Mark All Notifications Read", "Ctrl+Shift+R"), "Mark all notifications as read")
         self.Bind(wx.EVT_MENU, self.on_mark_all_notifications_read, m_mark_all_read)
         menu_bar.Append(view_menu, "&View")
@@ -779,6 +781,40 @@ class MainGui(wx.Frame):
     def on_repo_sync_now(self, event):
         """Trigger repository sync immediately."""
         self.run_repo_sync_background(manual=True)
+
+    def on_repo_sync_external(self, event):
+        """Prompt for a local git repository path and sync it directly."""
+        default_path = self.app.prefs.git_path if os.path.isdir(self.app.prefs.git_path) else os.path.expanduser("~")
+        dlg = wx.DirDialog(
+            self._get_dialog_parent(),
+            "Select local git repository folder",
+            defaultPath=default_path,
+            style=wx.DD_DEFAULT_STYLE
+        )
+        if dlg.ShowModal() != wx.ID_OK:
+            dlg.Destroy()
+            return
+        repo_path = dlg.GetPath()
+        dlg.Destroy()
+
+        self.status_bar.SetStatusText(f"Syncing external repo: {repo_path}")
+
+        def do_sync():
+            result = self.app.repo_sync.sync_path(repo_path, repo_label=repo_path, auto_pull=True, auto_push=False)
+            if result.ok:
+                wx.CallAfter(self.status_bar.SetStatusText, f"External sync complete: {repo_path}")
+                if self.app.prefs.repo_sync_notify:
+                    wx.CallAfter(self.show_notification, "External Repo Sync", result.message)
+            else:
+                wx.CallAfter(self.status_bar.SetStatusText, f"External sync failed: {repo_path}")
+                wx.CallAfter(
+                    wx.MessageBox,
+                    f"External sync failed:\n\n{result.message}",
+                    "External Repo Sync",
+                    wx.OK | wx.ICON_ERROR
+                )
+
+        threading.Thread(target=do_sync, daemon=True).start()
 
     def show_notification(self, title: str, message: str):
         """Show an OS desktop notification."""

@@ -8,6 +8,7 @@ import subprocess
 import os
 import re
 from application import get_app
+from local_repo_paths import build_repo_search_roots, find_existing_repo_path
 from models.repository import Repository
 from . import theme
 
@@ -218,6 +219,7 @@ class ViewRepoDialog(wx.Dialog):
         self.account = self.app.currentAccount
         self.is_starred = False
         self.is_watched = False
+        self._detected_repo_path = ""
 
         title = f"View Repository: {repo.full_name}"
         wx.Dialog.__init__(self, parent, title=title, size=(800, 550))
@@ -376,17 +378,37 @@ class ViewRepoDialog(wx.Dialog):
         # Check git status
         self.update_git_button()
 
-    def get_repo_path(self):
-        """Get the local path for this repository."""
+    def get_default_repo_path(self):
+        """Get the default local path for this repository from preferences."""
         git_path = self.app.prefs.git_path
         if self.app.prefs.git_use_org_structure:
             return os.path.join(git_path, self.repo.owner, self.repo.name)
         return os.path.join(git_path, self.repo.name)
 
+    def _resolve_existing_repo_path(self, force_refresh=False):
+        """Find an existing local clone for this repository if one exists."""
+        if self._detected_repo_path and not force_refresh:
+            return self._detected_repo_path
+        roots = build_repo_search_roots(self.app.prefs.git_path)
+        detected = find_existing_repo_path(
+            full_name=self.repo.full_name,
+            repo_name=self.repo.name,
+            owner=self.repo.owner,
+            roots=roots,
+        )
+        self._detected_repo_path = detected or ""
+        return self._detected_repo_path
+
+    def get_repo_path(self):
+        """Get the preferred path for this repository (existing clone or default path)."""
+        detected = self._resolve_existing_repo_path()
+        if detected:
+            return detected
+        return self.get_default_repo_path()
+
     def repo_exists_locally(self):
         """Check if the repository exists locally."""
-        repo_path = self.get_repo_path()
-        return os.path.isdir(os.path.join(repo_path, ".git"))
+        return bool(self._resolve_existing_repo_path())
 
     def update_git_button(self):
         """Update git button label based on whether repo exists."""
@@ -493,12 +515,23 @@ class ViewRepoDialog(wx.Dialog):
 
     def on_repo_sync(self, event):
         """Open auto-sync configuration for this repository."""
-        dlg = RepoSyncConfigDialog(self, self.repo, self.get_repo_path())
+        detected = self._resolve_existing_repo_path()
+        dlg = RepoSyncConfigDialog(self, self.repo, detected or self.get_default_repo_path())
         dlg.ShowModal()
         dlg.Destroy()
 
     def do_git_clone(self):
         """Clone the repository."""
+        detected = self._resolve_existing_repo_path(force_refresh=True)
+        if detected:
+            wx.MessageBox(
+                f"Repository already exists locally at:\n{detected}\n\nUsing pull instead of cloning.",
+                "Existing Repository Found",
+                wx.OK | wx.ICON_INFORMATION
+            )
+            self.do_git_pull()
+            return
+
         git_path = self.app.prefs.git_path
         clone_url = f"https://github.com/{self.repo.full_name}.git"
         use_org_structure = self.app.prefs.git_use_org_structure
@@ -531,7 +564,14 @@ class ViewRepoDialog(wx.Dialog):
 
     def do_git_pull(self):
         """Pull the latest changes."""
-        repo_path = self.get_repo_path()
+        repo_path = self._resolve_existing_repo_path(force_refresh=True)
+        if not repo_path:
+            wx.MessageBox(
+                "No existing local clone was found for this repository.",
+                "Pull Failed",
+                wx.OK | wx.ICON_ERROR
+            )
+            return
 
         # Create progress dialog
         progress_dlg = GitProgressDialog(self, f"Pulling {self.repo.name}", "pull")

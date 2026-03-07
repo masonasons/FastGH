@@ -41,3 +41,42 @@ def test_repo_sync_config_roundtrip():
     enabled = mgr.get_enabled_repos()
     assert len(enabled) == 1
     assert enabled[0][0] == "Raywonder/FastGH"
+
+
+def test_sync_path_requires_git_repo(tmp_path):
+    prefs = DummyPrefs()
+    mgr = RepoSyncManager(prefs)
+    repo_dir = tmp_path / "external-repo"
+    repo_dir.mkdir()
+
+    result = mgr.sync_path(str(repo_dir), repo_label="external")
+    assert result.ok is False
+    assert "Not a git repo" in result.message
+
+
+def test_remote_provider_detects_gitlab(monkeypatch):
+    prefs = DummyPrefs()
+    mgr = RepoSyncManager(prefs)
+
+    def fake_run_git_allow_fail(repo_path, args):
+        return True, "git@gitlab.com:group/project.git"
+
+    monkeypatch.setattr(mgr, "_run_git_allow_fail", fake_run_git_allow_fail)
+    assert mgr._remote_provider_name("/tmp/unused") == "gitlab"
+
+
+def test_detect_cross_os_hints(monkeypatch):
+    prefs = DummyPrefs()
+    mgr = RepoSyncManager(prefs)
+
+    monkeypatch.setattr(mgr, "_has_upstream", lambda _: True)
+    monkeypatch.setattr(
+        mgr,
+        "_run_git_allow_fail",
+        lambda repo_path, args: (True, "Fix windows path issue\nAlso verified on macOS and Linux"),
+    )
+
+    hints = mgr._detect_cross_os_hints("/tmp/unused")
+    assert "windows" in hints
+    assert "macos" in hints
+    assert "linux" in hints
