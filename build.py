@@ -6,6 +6,7 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import argparse
 import platform as platform_mod
 from pathlib import Path
 
@@ -241,7 +242,7 @@ def create_windows_zip(output_dir: Path, app_dir: Path) -> Path:
     return zip_path
 
 
-def build_macos(script_dir: Path, output_dir: Path) -> tuple:
+def build_macos(script_dir: Path, output_dir: Path, target_arch: str = "native") -> tuple:
     """Build for macOS using PyInstaller.
 
     Returns:
@@ -279,6 +280,9 @@ def build_macos(script_dir: Path, output_dir: Path) -> tuple:
         f"--osx-bundle-identifier={bundle_id}",
     ]
 
+    if target_arch != "native":
+        cmd.extend(["--target-arch", target_arch])
+
     # Add hidden imports
     for imp in get_hidden_imports():
         cmd.extend(["--hidden-import", imp])
@@ -293,7 +297,8 @@ def build_macos(script_dir: Path, output_dir: Path) -> tuple:
     # Add main script
     cmd.append(str(main_script))
 
-    print(f"Building {APP_NAME} v{APP_VERSION} for macOS...")
+    arch_label = platform_mod.machine() if target_arch == "native" else target_arch
+    print(f"Building {APP_NAME} v{APP_VERSION} for macOS ({arch_label})...")
     print(f"Output: {output_dir}")
     print()
 
@@ -337,7 +342,7 @@ def build_macos(script_dir: Path, output_dir: Path) -> tuple:
     sign_macos_app(app_path)
 
     # Create DMG
-    dmg_path = create_macos_dmg(output_dir, app_path)
+    dmg_path = create_macos_dmg(output_dir, app_path, target_arch=target_arch)
 
     return True, dmg_path
 
@@ -361,9 +366,10 @@ def sign_macos_app(app_path: Path):
         print(f"Code signing warning: {result.stderr}")
 
 
-def create_macos_dmg(output_dir: Path, app_path: Path) -> Path:
+def create_macos_dmg(output_dir: Path, app_path: Path, target_arch: str = "native") -> Path:
     """Create a DMG disk image for macOS distribution."""
-    dmg_name = f"{APP_NAME}-{APP_VERSION}.dmg"
+    arch_suffix = "" if target_arch == "native" else f"-{target_arch}"
+    dmg_name = f"{APP_NAME}-{APP_VERSION}{arch_suffix}.dmg"
     dmg_path = output_dir / dmg_name
 
     if dmg_path.exists():
@@ -408,12 +414,26 @@ def create_macos_dmg(output_dir: Path, app_path: Path) -> Path:
 
 def main():
     """Build FastGH executable using PyInstaller."""
+    parser = argparse.ArgumentParser(description="Build FastGH desktop artifacts")
+    parser.add_argument(
+        "--output-dir",
+        default=str(Path.home() / "app_dist" / APP_NAME),
+        help="Output directory for build artifacts (default: ~/app_dist/FastGH)"
+    )
+    parser.add_argument(
+        "--mac-arch",
+        choices=["native", "x86_64", "arm64", "universal2"],
+        default="native",
+        help="macOS target architecture for PyInstaller build (default: native)"
+    )
+    args = parser.parse_args()
+
     script_dir = Path(__file__).parent.resolve()
 
     platform = get_platform()
     print(f"Detected platform: {platform}")
 
-    output_dir = Path.home() / "app_dist" / APP_NAME
+    output_dir = Path(args.output_dir).expanduser().resolve()
 
     print(f"Building {APP_NAME} v{APP_VERSION} with PyInstaller...")
     print(f"Output: {output_dir}")
@@ -422,7 +442,7 @@ def main():
     if platform == "windows":
         success, artifact_path = build_windows(script_dir, output_dir)
     elif platform == "macos":
-        success, artifact_path = build_macos(script_dir, output_dir)
+        success, artifact_path = build_macos(script_dir, output_dir, target_arch=args.mac_arch)
     else:
         print(f"Unsupported platform: {platform}")
         sys.exit(1)
