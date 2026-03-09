@@ -11,6 +11,7 @@ import tempfile
 import shutil
 import config
 import wx
+import wx.adv
 import requests
 from version import APP_NAME, APP_SHORTNAME, APP_VERSION, APP_AUTHOR
 from repo_sync import RepoSyncManager
@@ -127,6 +128,7 @@ class Application:
         self.prefs.git_lfs_enabled = self.prefs.get("git_lfs_enabled", True)
 
         # OS notification settings
+        self.prefs.notification_delivery = self.prefs.get("notification_delivery", "push")
         self.prefs.notify_activity = self.prefs.get("notify_activity", False)
         self.prefs.notify_notifications = self.prefs.get("notify_notifications", False)
         self.prefs.notify_starred = self.prefs.get("notify_starred", False)
@@ -276,12 +278,26 @@ class Application:
 
     def alert_from_thread(self, message, caption=""):
         """Show an alert dialog from a background thread."""
+        if self.prefs.notification_delivery == "none":
+            return
         event = threading.Event()
         def show_dialog():
-            self.alert(message, caption)
+            if self.prefs.notification_delivery == "push":
+                self.push_notification(caption or APP_NAME, message)
+            else:
+                self.alert(message, caption)
             event.set()
         wx.CallAfter(show_dialog)
         event.wait()
+
+    def push_notification(self, title, message, timeout=5):
+        """Show a desktop push notification."""
+        try:
+            notification = wx.adv.NotificationMessage(title, message)
+            notification.SetFlags(wx.ICON_INFORMATION)
+            notification.Show(timeout=timeout)
+        except Exception as e:
+            print(f"Notification error: {e}")
 
     def _get_local_build_commit(self):
         """Get the commit SHA from the build_info.txt file."""
@@ -397,6 +413,7 @@ class Application:
                     pass
 
             if update_available:
+                delivery_mode = self.prefs.notification_delivery
                 message = "There is an update available.\n\n"
                 message += f"Your version: {version}"
                 if local_commit:
@@ -404,21 +421,25 @@ class Application:
                 message += f"\nLatest version: {latest_version}"
                 if release_commit:
                     message += f" (commit {release_commit[:8]})"
-                message += "\n\nDo you want to download and install the update?"
 
-                ud = self.question_from_thread("Update available: " + latest_version, message)
-                if ud == 1:
-                    for asset in latest['assets']:
-                        asset_name = asset['name'].lower()
-                        if platform.system() == "Windows" and 'windows' in asset_name and asset_name.endswith('.zip'):
-                            threading.Thread(target=self.download_update, args=[asset['browser_download_url']], daemon=True).start()
-                            return
-                        elif platform.system() == "Darwin" and asset_name.endswith('.dmg'):
-                            threading.Thread(target=self.download_update, args=[asset['browser_download_url']], daemon=True).start()
-                            return
-                    self.alert_from_thread("A download for this version could not be found for your platform.", "Error")
+                if delivery_mode == "alert":
+                    message += "\n\nDo you want to download and install the update?"
+                    ud = self.question_from_thread("Update available: " + latest_version, message)
+                    if ud == 1:
+                        for asset in latest['assets']:
+                            asset_name = asset['name'].lower()
+                            if platform.system() == "Windows" and 'windows' in asset_name and asset_name.endswith('.zip'):
+                                threading.Thread(target=self.download_update, args=[asset['browser_download_url']], daemon=True).start()
+                                return
+                            elif platform.system() == "Darwin" and asset_name.endswith('.dmg'):
+                                threading.Thread(target=self.download_update, args=[asset['browser_download_url']], daemon=True).start()
+                                return
+                        self.alert_from_thread("A download for this version could not be found for your platform.", "Error")
+                elif delivery_mode == "push":
+                    push_message = message + "\n\nOpen Help > Check for Updates to install."
+                    wx.CallAfter(self.push_notification, f"Update available: {latest_version}", push_message)
             else:
-                if not silent:
+                if not silent and self.prefs.notification_delivery != "none":
                     message = f"You are running the latest version: {version}"
                     if local_commit:
                         message += f" (commit {local_commit[:8]})"

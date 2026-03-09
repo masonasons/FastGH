@@ -198,6 +198,13 @@ class OptionsDialog(wx.Dialog):
         self.notify_repo_sync_cb = wx.CheckBox(self.panel, label="Notify on repository &sync results")
         notif_sizer.Add(self.notify_repo_sync_cb, 0, wx.LEFT | wx.TOP, 5)
 
+        delivery_row = wx.BoxSizer(wx.HORIZONTAL)
+        delivery_label = wx.StaticText(self.panel, label="Notification delivery:")
+        delivery_row.Add(delivery_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.notification_delivery_choice = wx.Choice(self.panel, choices=["Push notifications", "Alert dialogs", "None"])
+        delivery_row.Add(self.notification_delivery_choice, 0)
+        notif_sizer.Add(delivery_row, 0, wx.LEFT | wx.TOP, 10)
+
         # Auto-refresh interval
         refresh_row = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -348,6 +355,13 @@ class OptionsDialog(wx.Dialog):
         self.notify_starred_cb.SetValue(self.app.prefs.notify_starred)
         self.notify_watched_cb.SetValue(self.app.prefs.notify_watched)
         self.notify_repo_sync_cb.SetValue(self.app.prefs.repo_sync_notify)
+        delivery = self.app.prefs.notification_delivery
+        if delivery == "alert":
+            self.notification_delivery_choice.SetSelection(1)
+        elif delivery == "none":
+            self.notification_delivery_choice.SetSelection(2)
+        else:
+            self.notification_delivery_choice.SetSelection(0)
         self.refresh_spin.SetValue(self.app.prefs.auto_refresh_interval)
 
         if HOTKEY_SUPPORTED:
@@ -386,6 +400,13 @@ class OptionsDialog(wx.Dialog):
         self.app.prefs.notify_starred = self.notify_starred_cb.GetValue()
         self.app.prefs.notify_watched = self.notify_watched_cb.GetValue()
         self.app.prefs.repo_sync_notify = self.notify_repo_sync_cb.GetValue()
+        delivery_idx = self.notification_delivery_choice.GetSelection()
+        if delivery_idx == 1:
+            self.app.prefs.notification_delivery = "alert"
+        elif delivery_idx == 2:
+            self.app.prefs.notification_delivery = "none"
+        else:
+            self.app.prefs.notification_delivery = "push"
 
         old_interval = self.app.prefs.auto_refresh_interval
         new_interval = self.refresh_spin.GetValue()

@@ -826,13 +826,18 @@ class MainGui(wx.Frame):
         threading.Thread(target=do_sync, daemon=True).start()
 
     def show_notification(self, title: str, message: str):
-        """Show an OS desktop notification."""
+        """Show a notification according to user delivery preferences."""
+        mode = getattr(self.app.prefs, "notification_delivery", "push")
+        if mode == "none":
+            return
+        if mode == "alert":
+            wx.MessageBox(message, title, wx.OK | wx.ICON_INFORMATION)
+            return
         try:
             notification = wx.adv.NotificationMessage(title, message, self)
             notification.SetFlags(wx.ICON_INFORMATION)
             notification.Show(timeout=5)  # Show for 5 seconds
         except Exception as e:
-            # Fallback if notifications not supported
             print(f"Notification error: {e}")
 
     def _check_and_notify_feed(self, new_feed):
@@ -1746,14 +1751,12 @@ class MainGui(wx.Frame):
             dlg.Destroy()
 
     def on_close(self, event):
-        """Handle window close - hide to tray instead of exit (exit on macOS)."""
-        if platform.system() == "Darwin":
-            # On macOS, actually exit since there's no tray
-            self.exit_app()
-        else:
-            # Save window visibility state
+        """Handle window close - hide to tray/status item when available."""
+        if tray_icon:
             self.app.prefs.window_shown = False
             self.Hide()
+        else:
+            self.exit_app()
 
     def on_hide(self, event):
         """Hide window to system tray."""
@@ -1860,8 +1863,10 @@ def create_window():
     global window, tray_icon
     window = MainGui(APP_NAME)
 
-    # Create system tray icon (not on macOS)
-    if platform.system() != "Darwin":
+    # Create system tray / status item when available.
+    if wx.adv.TaskBarIcon.IsAvailable():
         tray_icon = TaskBarIcon(window)
+    else:
+        tray_icon = None
 
     return window
