@@ -19,6 +19,36 @@ shortname = APP_SHORTNAME
 name = APP_NAME
 version = APP_VERSION
 author = APP_AUTHOR
+DEFAULT_UPDATE_REPO = os.environ.get("FASTGH_UPDATE_REPO", "raywonder/FastGH")
+
+
+def _install_macos_wx_raise_guard():
+    """Disable wx Raise() on macOS to avoid Cocoa null-deref crashes."""
+    if platform.system() != "Darwin":
+        return
+    if getattr(wx, "_fastgh_raise_guard_installed", False):
+        return
+
+    def _safe_raise(self):
+        try:
+            if hasattr(self, "SetFocus"):
+                self.SetFocus()
+        except Exception:
+            pass
+        return None
+
+    for cls_name in ("TopLevelWindow", "Dialog", "Frame"):
+        cls = getattr(wx, cls_name, None)
+        if cls is not None and hasattr(cls, "Raise"):
+            try:
+                setattr(cls, "Raise", _safe_raise)
+            except Exception:
+                pass
+
+    wx._fastgh_raise_guard_installed = True
+
+
+_install_macos_wx_raise_guard()
 
 
 class Application:
@@ -120,6 +150,10 @@ class Application:
 
         # Check for updates on startup
         self.prefs.check_for_updates = self.prefs.get("check_for_updates", True)
+        self.prefs.update_channel = self.prefs.get(
+            "update_channel",
+            f"https://api.github.com/repos/{DEFAULT_UPDATE_REPO}/releases"
+        )
 
         # Load accounts
         if self.prefs.accounts > 0:
@@ -286,6 +320,35 @@ class Application:
                         if progress_callback:
                             progress_callback(downloaded, total_size)
 
+    def _resolve_update_channel_url(self) -> str:
+        """Resolve update channel configured as full URL or owner/repo shorthand."""
+        channel = (self.prefs.get("update_channel", "") if self.prefs else "").strip()
+        if not channel:
+            return f"https://api.github.com/repos/{DEFAULT_UPDATE_REPO}/releases"
+        if "://" in channel:
+            return channel
+        if "/" in channel:
+            return f"https://api.github.com/repos/{channel}/releases"
+        return channel
+
+    def _load_releases_from_channel(self):
+        """Load and normalize releases from configured channel."""
+        channel_url = self._resolve_update_channel_url()
+        payload = requests.get(
+            channel_url,
+            headers={"accept": "application/vnd.github.v3+json"},
+            timeout=20
+        ).json()
+
+        if isinstance(payload, list):
+            return payload, channel_url
+        if isinstance(payload, dict):
+            if isinstance(payload.get("releases"), list):
+                return payload["releases"], channel_url
+            if isinstance(payload.get("latest"), dict):
+                return [payload["latest"]], channel_url
+        raise ValueError(f"Unsupported update channel payload: {channel_url}")
+
     def cfu(self, silent=True):
         """Check for updates."""
         # Don't run auto-updater when running from source
@@ -295,11 +358,7 @@ class Application:
             return
 
         try:
-            # Get releases from GitHub
-            releases = json.loads(requests.get(
-                "https://api.github.com/repos/masonasons/FastGH/releases",
-                headers={"accept": "application/vnd.github.v3+json"}
-            ).content.decode())
+            releases, channel_url = self._load_releases_from_channel()
 
             if not releases:
                 if not silent:
@@ -363,6 +422,7 @@ class Application:
                     message = f"You are running the latest version: {version}"
                     if local_commit:
                         message += f" (commit {local_commit[:8]})"
+                    message += f"\nChannel: {channel_url}"
                     self.alert_from_thread("No updates available!\n\n" + message, "No Update Available")
         except Exception as e:
             if not silent:

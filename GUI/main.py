@@ -8,6 +8,7 @@ import webbrowser
 from application import get_app
 from models.repository import Repository
 from version import APP_NAME
+from .wx_safety import safe_raise
 
 # Global hotkey support (Windows only)
 if platform.system() != "Darwin":
@@ -374,7 +375,12 @@ class MainGui(wx.Frame):
         """Handle key events in list (using CHAR_HOOK for reliability)."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_view_repo(None)
+            # On macOS, invoking modal dialogs directly from key hooks can crash
+            # in wxWidgets Cocoa. Defer to the next event-loop turn.
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_view_repo, None)
+            else:
+                self.on_view_repo(None)
         else:
             event.Skip()
 
@@ -391,7 +397,10 @@ class MainGui(wx.Frame):
         """Handle key events in feed list."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_open_feed_event(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_open_feed_event, None)
+            else:
+                self.on_open_feed_event(None)
         else:
             event.Skip()
 
@@ -1274,7 +1283,10 @@ class MainGui(wx.Frame):
         """Handle key events in following list (using CHAR_HOOK for reliability)."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_view_following_user(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_view_following_user, None)
+            else:
+                self.on_view_following_user(None)
         else:
             event.Skip()
 
@@ -1305,7 +1317,7 @@ class MainGui(wx.Frame):
         user = self.get_selected_following_user()
         if user:
             from GUI.search import UserProfileDialog
-            dlg = UserProfileDialog(self, user.login)
+            dlg = UserProfileDialog(self._get_dialog_parent(), user.login)
             dlg.ShowModal()
             dlg.Destroy()
 
@@ -1346,7 +1358,10 @@ class MainGui(wx.Frame):
         """Handle key events in notifications list."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_open_notification(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_open_notification, None)
+            else:
+                self.on_open_notification(None)
         elif key == wx.WXK_DELETE:
             self.on_mark_notification_done(None)
         else:
@@ -1753,7 +1768,7 @@ class MainGui(wx.Frame):
         else:
             self.app.prefs.window_shown = True
             self.Show()
-            self.Raise()
+            safe_raise(self)
             self._focus_current_list()
 
     def _focus_current_list(self):
