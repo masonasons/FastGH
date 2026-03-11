@@ -8,6 +8,7 @@ from application import get_app
 from models.repository import Repository
 from models.commit import Commit
 from . import theme
+from .wx_safety import safe_raise
 
 
 MAX_BRANCHES_DISPLAY = 50
@@ -27,6 +28,7 @@ class CommitsDialog(wx.Dialog):
         self.filtered_branches = []  # Currently displayed branches
         self.current_branch = None
         self.initial_load = True  # Track first load for focus
+        self._open_view_dialog = None
 
         title = f"Commits - {repo.full_name}"
         wx.Dialog.__init__(self, parent, title=title, size=(900, 600))
@@ -274,9 +276,26 @@ class CommitsDialog(wx.Dialog):
         """View commit details in a dialog."""
         commit = self.get_selected_commit()
         if commit:
+            if self._open_view_dialog:
+                try:
+                    if self._open_view_dialog.IsShown():
+                        safe_raise(self._open_view_dialog)
+                        return
+                except RuntimeError:
+                    self._open_view_dialog = None
             dlg = ViewCommitDialog(self, self.repo, commit)
-            dlg.ShowModal()
-            dlg.Destroy()
+            if platform.system() == "Darwin":
+                # Nested modal dialogs can crash wx on macOS; keep this modeless.
+                self._open_view_dialog = dlg
+                def _clear_ref(_event):
+                    self._open_view_dialog = None
+                    dlg.Destroy()
+                dlg.Bind(wx.EVT_CLOSE, _clear_ref)
+                dlg.Show()
+                wx.CallAfter(safe_raise, dlg)
+            else:
+                dlg.ShowModal()
+                dlg.Destroy()
 
     def on_copy_sha(self, event):
         """Copy commit SHA to clipboard."""
@@ -317,7 +336,10 @@ class CommitsDialog(wx.Dialog):
         """Handle key events."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN:
-            self.on_view(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_view, None)
+            else:
+                self.on_view(None)
         else:
             event.Skip()
 
