@@ -335,7 +335,7 @@ class OptionsDialog(wx.Dialog):
         mute_sizer.Add(self.muted_repos_list, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
         add_row = wx.BoxSizer(wx.HORIZONTAL)
-        self.muted_repo_entry = wx.TextCtrl(panel, size=(280, -1))
+        self.muted_repo_entry = wx.TextCtrl(panel, size=(280, -1), style=wx.TE_PROCESS_ENTER)
         self.muted_repo_entry.SetHint("owner/repo")
         add_row.Add(self.muted_repo_entry, 1, wx.RIGHT, 6)
         self.mute_add_btn = wx.Button(panel, label="&Add")
