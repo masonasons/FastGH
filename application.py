@@ -13,6 +13,7 @@ import config
 import wx
 import requests
 from version import APP_NAME, APP_SHORTNAME, APP_VERSION, APP_AUTHOR
+from repo_sync import RepoSyncManager
 
 shortname = APP_SHORTNAME
 name = APP_NAME
@@ -31,6 +32,7 @@ class Application:
         self.confpath = ""
         self.errors = []
         self.currentAccount = None
+        self.repo_sync = None
         self._initialized = False
 
     @classmethod
@@ -92,6 +94,7 @@ class Application:
         # Git clone options
         self.prefs.git_use_org_structure = self.prefs.get("git_use_org_structure", False)
         self.prefs.git_clone_recursive = self.prefs.get("git_clone_recursive", False)
+        self.prefs.git_lfs_enabled = self.prefs.get("git_lfs_enabled", True)
 
         # OS notification settings
         self.prefs.notify_activity = self.prefs.get("notify_activity", False)
@@ -101,6 +104,19 @@ class Application:
 
         # Auto-refresh interval in minutes (0 = disabled)
         self.prefs.auto_refresh_interval = self.prefs.get("auto_refresh_interval", 0)
+
+        # Repository auto-sync settings
+        self.prefs.repo_sync_enabled = self.prefs.get("repo_sync_enabled", False)
+        self.prefs.repo_sync_interval_minutes = self.prefs.get("repo_sync_interval_minutes", 0)
+        self.prefs.repo_sync_configs = self.prefs.get("repo_sync_configs", {})
+        self.prefs.repo_sync_use_github_tools = self.prefs.get("repo_sync_use_github_tools", True)
+        self.prefs.repo_sync_notify = self.prefs.get("repo_sync_notify", True)
+        if platform.system() == "Windows":
+            default_tools_path = os.path.join(os.path.expanduser("~"), "dev", "apps", ".GITHUB")
+        else:
+            default_tools_path = os.path.expanduser("~/DEV/APPS/.GITHUB")
+        self.prefs.repo_sync_github_tools_path = self.prefs.get("repo_sync_github_tools_path", default_tools_path)
+        self.repo_sync = RepoSyncManager(self.prefs)
 
         # Check for updates on startup
         self.prefs.check_for_updates = self.prefs.get("check_for_updates", True)
@@ -184,8 +200,9 @@ class Application:
     def question(self, title, text, parent=None):
         """Show a yes/no question dialog."""
         dlg = wx.MessageDialog(parent, text, title, wx.YES_NO | wx.ICON_QUESTION)
-        dlg.Raise()
-        dlg.RequestUserAttention()
+        if platform.system() != "Darwin":
+            dlg.Raise()
+            dlg.RequestUserAttention()
         result = dlg.ShowModal()
         dlg.Destroy()
         return 1 if result == wx.ID_YES else 2
@@ -193,8 +210,9 @@ class Application:
     def alert(self, message, caption="", parent=None):
         """Show an alert dialog."""
         dlg = wx.MessageDialog(parent, message, caption, wx.OK)
-        dlg.Raise()
-        dlg.RequestUserAttention()
+        if platform.system() != "Darwin":
+            dlg.Raise()
+            dlg.RequestUserAttention()
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -373,7 +391,8 @@ class Application:
                     maximum=100,
                     style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_CAN_ABORT | wx.PD_ELAPSED_TIME | wx.PD_REMAINING_TIME
                 )
-                progress_data['dialog'].Raise()
+                if platform.system() != "Darwin":
+                    progress_data['dialog'].Raise()
 
             def update_progress(downloaded, total):
                 if progress_data['dialog'] and total > 0:
@@ -472,7 +491,8 @@ del "%~f0"
                     maximum=100,
                     style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_CAN_ABORT | wx.PD_ELAPSED_TIME | wx.PD_REMAINING_TIME
                 )
-                progress_data['dialog'].Raise()
+                if platform.system() != "Darwin":
+                    progress_data['dialog'].Raise()
 
             def update_progress(downloaded, total):
                 if progress_data['dialog'] and total > 0:

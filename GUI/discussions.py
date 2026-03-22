@@ -158,7 +158,11 @@ class ViewDiscussionDialog(wx.Dialog):
             preview = comment.body.replace("\n", " ")
             if len(preview) > 60:
                 preview = preview[:60] + "..."
-            self.comments_list.Append(f"{comment.author.login} ({time_str}): {preview}")
+            if comment.is_reply:
+                parent = f" to {comment.parent_author_login}" if comment.parent_author_login else ""
+                self.comments_list.Append(f"[Reply{parent}] {comment.author.login} ({time_str}): {preview}")
+            else:
+                self.comments_list.Append(f"{comment.author.login} ({time_str}): {preview}")
 
     def _set_comments_loaded(self, comments: list[DiscussionComment], has_next_page: bool, end_cursor: str | None):
         """Replace comments list after a refresh."""

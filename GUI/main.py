@@ -8,6 +8,7 @@ import webbrowser
 from application import get_app
 from models.repository import Repository
 from version import APP_NAME
+from .wx_safety import safe_raise
 
 # Global hotkey support (Windows only)
 if platform.system() != "Darwin":
@@ -132,6 +133,9 @@ class MainGui(wx.Frame):
         # Auto-refresh timer
         self.auto_refresh_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.on_auto_refresh, self.auto_refresh_timer)
+        self.repo_sync_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_repo_sync_timer, self.repo_sync_timer)
+        self._repo_sync_running = False
 
         # Global hotkey handler
         self.keyboard_handler = None
@@ -149,6 +153,7 @@ class MainGui(wx.Frame):
 
         # Start auto-refresh timer if enabled
         self.update_auto_refresh_timer()
+        self.update_repo_sync_timer()
 
         # Check for updates on startup if enabled
         if self.app.prefs.check_for_updates:
@@ -273,6 +278,8 @@ class MainGui(wx.Frame):
         m_notifications = view_menu.Append(-1, self._menu_label("Notifications", "Ctrl+6"), "Show notifications")
         self.Bind(wx.EVT_MENU, lambda e: self.notebook.SetSelection(5), m_notifications)
         view_menu.AppendSeparator()
+        m_repo_sync_now = view_menu.Append(-1, self._menu_label("Run Repo Sync Now", "Ctrl+Shift+Y"), "Run configured repository sync now")
+        self.Bind(wx.EVT_MENU, self.on_repo_sync_now, m_repo_sync_now)
         m_mark_all_read = view_menu.Append(-1, self._menu_label("Mark All Notifications Read", "Ctrl+Shift+R"), "Mark all notifications as read")
         self.Bind(wx.EVT_MENU, self.on_mark_all_notifications_read, m_mark_all_read)
         menu_bar.Append(view_menu, "&View")
@@ -366,7 +373,12 @@ class MainGui(wx.Frame):
         """Handle key events in list (using CHAR_HOOK for reliability)."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_view_repo(None)
+            # On macOS, invoking modal dialogs directly from key hooks can crash
+            # in wxWidgets Cocoa. Defer to the next event-loop turn.
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_view_repo, None)
+            else:
+                self.on_view_repo(None)
         else:
             event.Skip()
 
@@ -383,7 +395,10 @@ class MainGui(wx.Frame):
         """Handle key events in feed list."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_open_feed_event(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_open_feed_event, None)
+            else:
+                self.on_open_feed_event(None)
         else:
             event.Skip()
 
@@ -721,6 +736,58 @@ class MainGui(wx.Frame):
     def on_auto_refresh(self, event):
         """Handle auto-refresh timer event."""
         self.refresh_all()
+
+    def update_repo_sync_timer(self):
+        """Start or stop repository auto-sync timer based on settings."""
+        enabled = self.app.prefs.repo_sync_enabled
+        interval = self.app.prefs.repo_sync_interval_minutes
+        if enabled and interval > 0:
+            self.repo_sync_timer.Start(interval * 60 * 1000)
+        else:
+            self.repo_sync_timer.Stop()
+
+    def on_repo_sync_timer(self, event):
+        """Handle repository auto-sync timer event."""
+        self.run_repo_sync_background(manual=False)
+
+    def run_repo_sync_background(self, manual=False):
+        """Run repository sync in background and publish short status text."""
+        if self._repo_sync_running:
+            return
+        self._repo_sync_running = True
+
+        def do_sync():
+            try:
+                results = self.app.repo_sync.sync_all_enabled() if self.app.repo_sync else []
+                if not results:
+                    wx.CallAfter(self.status_bar.SetStatusText, "Repo sync: no enabled repositories")
+                    if manual and self.app.prefs.repo_sync_notify:
+                        wx.CallAfter(self.show_notification, "Repo Sync", "No enabled repositories configured.")
+                    return
+                failed = [r for r in results if not r.ok]
+                if failed:
+                    summary = f"Repo sync: {len(results) - len(failed)}/{len(results)} succeeded"
+                    wx.CallAfter(self.status_bar.SetStatusText, summary)
+                    if self.app.prefs.repo_sync_notify:
+                        first = failed[0]
+                        wx.CallAfter(self.show_notification, "Repo Sync Errors", f"{summary}. First failure: {first.repo}")
+                else:
+                    summary = f"Repo sync: {len(results)} repositories synced"
+                    wx.CallAfter(self.status_bar.SetStatusText, summary)
+                    if self.app.prefs.repo_sync_notify and manual:
+                        wx.CallAfter(self.show_notification, "Repo Sync Complete", summary)
+            except Exception as exc:
+                wx.CallAfter(self.status_bar.SetStatusText, f"Repo sync error: {exc}")
+                if self.app.prefs.repo_sync_notify:
+                    wx.CallAfter(self.show_notification, "Repo Sync Error", str(exc))
+            finally:
+                self._repo_sync_running = False
+
+        threading.Thread(target=do_sync, daemon=True).start()
+
+    def on_repo_sync_now(self, event):
+        """Trigger repository sync immediately."""
+        self.run_repo_sync_background(manual=True)
 
     def show_notification(self, title: str, message: str):
         """Show an OS desktop notification."""
@@ -1180,7 +1247,10 @@ class MainGui(wx.Frame):
         """Handle key events in following list (using CHAR_HOOK for reliability)."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_view_following_user(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_view_following_user, None)
+            else:
+                self.on_view_following_user(None)
         else:
             event.Skip()
 
@@ -1252,7 +1322,10 @@ class MainGui(wx.Frame):
         """Handle key events in notifications list."""
         key = event.GetKeyCode()
         if key == wx.WXK_RETURN or key == wx.WXK_NUMPAD_ENTER:
-            self.on_open_notification(None)
+            if platform.system() == "Darwin":
+                wx.CallAfter(self.on_open_notification, None)
+            else:
+                self.on_open_notification(None)
         elif key == wx.WXK_DELETE:
             self.on_mark_notification_done(None)
         else:
@@ -1659,7 +1732,7 @@ class MainGui(wx.Frame):
         else:
             self.app.prefs.window_shown = True
             self.Show()
-            self.Raise()
+            safe_raise(self)
             self._focus_current_list()
 
     def _focus_current_list(self):
