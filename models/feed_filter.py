@@ -89,6 +89,7 @@ FILTER_GROUPS: list[tuple[str, list[str]]] = [
 
 # Key written to each account's config JSON.
 CONFIG_KEY = "feed_visible_event_types"
+MUTED_REPOS_KEY = "feed_muted_repos"
 
 # ---------------------------------------------------------------------------
 # Core functions
@@ -136,6 +137,32 @@ def save_visible_types(account_prefs, visible: set[str]) -> None:
     account_prefs[CONFIG_KEY] = sorted(visible)
 
 
+def load_muted_repos(account_prefs) -> Optional[set[str]]:
+    """Return the set of muted repo full-names (owner/repo) for this account.
+
+    Return values:
+      None        — key is absent; no repos are muted (new account)
+      set()       — key is present but empty; explicitly configured with nothing muted
+      {str, ...}  — one or more repos are muted
+
+    Invalid stored values return None (safe fallback — mute nothing).
+    """
+    raw = account_prefs.get(MUTED_REPOS_KEY, None)
+
+    if raw is None:
+        return None
+
+    if not isinstance(raw, list):
+        return None
+
+    return {item for item in raw if isinstance(item, str)}
+
+
+def save_muted_repos(account_prefs, muted: set[str]) -> None:
+    """Persist the muted repo set to the account config as a sorted list."""
+    account_prefs[MUTED_REPOS_KEY] = sorted(muted)
+
+
 def is_event_visible(event, visible: Optional[set[str]]) -> bool:
     """Return True if *event* should appear in the feed.
 
@@ -148,12 +175,24 @@ def is_event_visible(event, visible: Optional[set[str]]) -> bool:
     return event.type in visible
 
 
-def filter_feed(events, visible: Optional[set[str]]) -> list:
+def filter_feed(
+    events,
+    visible: Optional[set[str]],
+    muted_repos: Optional[set[str]] = None,
+) -> list:
     """Return a new list containing only the visible events.
 
+    Filters are applied in order:
+      1. Muted repos (blacklist) — events from a muted repo are always hidden.
+      2. Visible types (whitelist) — if configured, only listed types pass.
+
     Does not mutate the input iterable.
-    If visible is None every event passes through (copy semantics preserved).
     """
-    if visible is None:
-        return list(events)
-    return [e for e in events if e.type in visible]
+    result = []
+    for e in events:
+        if muted_repos and e.repo.name in muted_repos:
+            continue
+        if visible is not None and e.type not in visible:
+            continue
+        result.append(e)
+    return result

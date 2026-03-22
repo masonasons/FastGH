@@ -11,9 +11,12 @@ from models.feed_filter import (
     ALL_EVENT_TYPES,
     CONFIG_KEY,
     FILTER_GROUPS,
+    MUTED_REPOS_KEY,
     filter_feed,
     is_event_visible,
+    load_muted_repos,
     load_visible_types,
+    save_muted_repos,
     save_visible_types,
 )
 
@@ -23,13 +26,13 @@ from models.feed_filter import (
 # ---------------------------------------------------------------------------
 
 
-def _make_event(event_type: str) -> Event:
+def _make_event(event_type: str, repo: str = "owner/repo") -> Event:
     return Event.from_api(
         {
             "id": "1",
             "type": event_type,
             "actor": {"id": 1, "login": "alice", "avatar_url": ""},
-            "repo": {"id": 1, "name": "owner/repo", "url": ""},
+            "repo": {"id": 1, "name": repo, "url": ""},
             "payload": {},
             "public": True,
             "created_at": None,
@@ -386,3 +389,224 @@ def test_roundtrip_all_types():
     prefs = {}
     save_visible_types(prefs, set(ALL_EVENT_TYPES))
     assert load_visible_types(prefs) == set(ALL_EVENT_TYPES)
+
+
+# ---------------------------------------------------------------------------
+# load_muted_repos — baseline
+# ---------------------------------------------------------------------------
+
+
+def test_load_muted_repos_absent_key_returns_none():
+    assert load_muted_repos({}) is None
+
+
+def test_load_muted_repos_empty_list_returns_empty_set():
+    assert load_muted_repos({MUTED_REPOS_KEY: []}) == set()
+
+
+def test_load_muted_repos_single_repo():
+    assert load_muted_repos({MUTED_REPOS_KEY: ["owner/repo"]}) == {"owner/repo"}
+
+
+def test_load_muted_repos_multiple_repos():
+    result = load_muted_repos({MUTED_REPOS_KEY: ["alice/foo", "bob/bar"]})
+    assert result == {"alice/foo", "bob/bar"}
+
+
+# ---------------------------------------------------------------------------
+# load_muted_repos — corrupt / invalid stored data
+# ---------------------------------------------------------------------------
+
+
+def test_load_muted_repos_string_value_returns_none():
+    assert load_muted_repos({MUTED_REPOS_KEY: "owner/repo"}) is None
+
+
+def test_load_muted_repos_dict_value_returns_none():
+    assert load_muted_repos({MUTED_REPOS_KEY: {"owner/repo": True}}) is None
+
+
+def test_load_muted_repos_none_value_returns_none():
+    assert load_muted_repos({MUTED_REPOS_KEY: None}) is None
+
+
+def test_load_muted_repos_integer_value_returns_none():
+    assert load_muted_repos({MUTED_REPOS_KEY: 42}) is None
+
+
+def test_load_muted_repos_list_drops_non_string_items():
+    result = load_muted_repos({MUTED_REPOS_KEY: [42, None, "owner/repo", 3.14]})
+    assert result == {"owner/repo"}
+
+
+def test_load_muted_repos_list_all_non_strings_returns_empty_set():
+    result = load_muted_repos({MUTED_REPOS_KEY: [1, 2, None]})
+    assert result == set()
+
+
+# ---------------------------------------------------------------------------
+# save_muted_repos
+# ---------------------------------------------------------------------------
+
+
+def test_save_muted_repos_writes_sorted_list():
+    prefs = {}
+    save_muted_repos(prefs, {"charlie/z", "alice/a", "bob/m"})
+    assert prefs[MUTED_REPOS_KEY] == ["alice/a", "bob/m", "charlie/z"]
+
+
+def test_save_muted_repos_empty_set_writes_empty_list():
+    prefs = {}
+    save_muted_repos(prefs, set())
+    assert prefs[MUTED_REPOS_KEY] == []
+
+
+def test_save_muted_repos_uses_correct_key():
+    prefs = {}
+    save_muted_repos(prefs, {"owner/repo"})
+    assert MUTED_REPOS_KEY in prefs
+
+
+def test_save_muted_repos_overwrites_existing():
+    prefs = {MUTED_REPOS_KEY: ["old/repo"]}
+    save_muted_repos(prefs, {"new/repo"})
+    assert prefs[MUTED_REPOS_KEY] == ["new/repo"]
+
+
+def test_save_muted_repos_key_present_after_empty_save():
+    prefs = {}
+    save_muted_repos(prefs, set())
+    assert MUTED_REPOS_KEY in prefs
+    assert load_muted_repos(prefs) == set()
+
+
+# ---------------------------------------------------------------------------
+# filter_feed — muted repos
+# ---------------------------------------------------------------------------
+
+
+def test_filter_feed_muted_repos_none_passes_all():
+    events = [_make_event("PushEvent", "alice/foo"), _make_event("ForkEvent", "bob/bar")]
+    assert len(filter_feed(events, None, None)) == 2
+
+
+def test_filter_feed_muted_repos_empty_set_passes_all():
+    events = [_make_event("PushEvent", "alice/foo"), _make_event("ForkEvent", "bob/bar")]
+    assert len(filter_feed(events, None, set())) == 2
+
+
+def test_filter_feed_muted_repo_hides_matching_events():
+    events = [
+        _make_event("PushEvent", "alice/foo"),
+        _make_event("ForkEvent", "bob/bar"),
+    ]
+    result = filter_feed(events, None, {"alice/foo"})
+    assert len(result) == 1
+    assert result[0].repo.name == "bob/bar"
+
+
+def test_filter_feed_muted_repo_hides_all_event_types_from_that_repo():
+    events = [_make_event(t, "noisy/repo") for t in ["PushEvent", "ForkEvent", "WatchEvent"]]
+    result = filter_feed(events, None, {"noisy/repo"})
+    assert result == []
+
+
+def test_filter_feed_non_muted_repo_events_pass_through():
+    events = [_make_event("PushEvent", "safe/repo")]
+    result = filter_feed(events, None, {"other/repo"})
+    assert len(result) == 1
+
+
+def test_filter_feed_muted_repos_and_visible_types_both_applied():
+    events = [
+        _make_event("PushEvent", "alice/foo"),   # wrong repo
+        _make_event("ForkEvent", "bob/bar"),     # wrong type
+        _make_event("PushEvent", "bob/bar"),     # passes both
+    ]
+    result = filter_feed(events, {"PushEvent"}, {"alice/foo"})
+    assert len(result) == 1
+    assert result[0].repo.name == "bob/bar"
+    assert result[0].type == "PushEvent"
+
+
+def test_filter_feed_muted_repo_beats_visible_type():
+    # Even if the event type is in visible, muted repo blocks it
+    events = [_make_event("PushEvent", "muted/repo")]
+    result = filter_feed(events, {"PushEvent"}, {"muted/repo"})
+    assert result == []
+
+
+def test_filter_feed_multiple_muted_repos():
+    events = [
+        _make_event("PushEvent", "muted/one"),
+        _make_event("PushEvent", "muted/two"),
+        _make_event("PushEvent", "allowed/repo"),
+    ]
+    result = filter_feed(events, None, {"muted/one", "muted/two"})
+    assert len(result) == 1
+    assert result[0].repo.name == "allowed/repo"
+
+
+def test_filter_feed_muted_repos_preserves_order():
+    events = [
+        _make_event("PushEvent", "keep/a"),
+        _make_event("PushEvent", "muted/x"),
+        _make_event("PushEvent", "keep/b"),
+    ]
+    result = filter_feed(events, None, {"muted/x"})
+    assert [e.repo.name for e in result] == ["keep/a", "keep/b"]
+
+
+def test_filter_feed_does_not_mutate_original_with_muted_repos():
+    events = [_make_event("PushEvent", "muted/repo"), _make_event("ForkEvent", "safe/repo")]
+    original_len = len(events)
+    filter_feed(events, None, {"muted/repo"})
+    assert len(events) == original_len
+
+
+# ---------------------------------------------------------------------------
+# Muted repos roundtrips
+# ---------------------------------------------------------------------------
+
+
+def test_muted_repos_roundtrip_single():
+    prefs = {}
+    save_muted_repos(prefs, {"owner/repo"})
+    assert load_muted_repos(prefs) == {"owner/repo"}
+
+
+def test_muted_repos_roundtrip_multiple():
+    original = {"alice/foo", "bob/bar", "charlie/baz"}
+    prefs = {}
+    save_muted_repos(prefs, original)
+    assert load_muted_repos(prefs) == original
+
+
+def test_muted_repos_roundtrip_empty_returns_empty_not_none():
+    prefs = {}
+    save_muted_repos(prefs, set())
+    result = load_muted_repos(prefs)
+    assert result is not None
+    assert result == set()
+
+
+# ---------------------------------------------------------------------------
+# Muted repos account isolation
+# ---------------------------------------------------------------------------
+
+
+def test_muted_repos_different_prefs_give_different_sets():
+    prefs_a = {MUTED_REPOS_KEY: ["alice/foo"]}
+    prefs_b = {MUTED_REPOS_KEY: ["bob/bar"]}
+    assert load_muted_repos(prefs_a) != load_muted_repos(prefs_b)
+
+
+def test_saving_muted_repos_for_b_does_not_affect_a():
+    prefs_a = {MUTED_REPOS_KEY: ["alice/foo"]}
+    prefs_b = {}
+    save_muted_repos(prefs_b, {"bob/bar"})
+    assert load_muted_repos(prefs_a) == {"alice/foo"}
+
+
+def test_muted_repos_key_value():
+    assert MUTED_REPOS_KEY == "feed_muted_repos"

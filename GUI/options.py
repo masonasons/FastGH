@@ -320,6 +320,32 @@ class OptionsDialog(wx.Dialog):
         bulk_sizer.Add(self.deselect_all_btn, 0)
         main_sizer.Add(bulk_sizer, 0, wx.LEFT | wx.BOTTOM, 10)
 
+        # Muted Repositories section
+        mute_box = wx.StaticBox(panel, label="Muted Repositories")
+        mute_sizer = wx.StaticBoxSizer(mute_box, wx.VERTICAL)
+
+        mute_intro = wx.StaticText(
+            panel,
+            label="Events from muted repositories are always hidden, regardless of event type."
+        )
+        mute_intro.Wrap(500)
+        mute_sizer.Add(mute_intro, 0, wx.ALL, 8)
+
+        self.muted_repos_list = wx.ListBox(panel, size=(-1, 100), style=wx.LB_SINGLE)
+        mute_sizer.Add(self.muted_repos_list, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+
+        add_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.muted_repo_entry = wx.TextCtrl(panel, size=(280, -1))
+        self.muted_repo_entry.SetHint("owner/repo")
+        add_row.Add(self.muted_repo_entry, 1, wx.RIGHT, 6)
+        self.mute_add_btn = wx.Button(panel, label="&Add")
+        add_row.Add(self.mute_add_btn, 0, wx.RIGHT, 4)
+        self.mute_remove_btn = wx.Button(panel, label="&Remove")
+        add_row.Add(self.mute_remove_btn, 0)
+        mute_sizer.Add(add_row, 0, wx.EXPAND | wx.ALL, 8)
+
+        main_sizer.Add(mute_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         panel.SetSizer(main_sizer)
 
     def bind_events(self):
@@ -338,6 +364,9 @@ class OptionsDialog(wx.Dialog):
 
         self.select_all_btn.Bind(wx.EVT_BUTTON, self.on_select_all_filters)
         self.deselect_all_btn.Bind(wx.EVT_BUTTON, self.on_deselect_all_filters)
+        self.mute_add_btn.Bind(wx.EVT_BUTTON, self.on_mute_add)
+        self.mute_remove_btn.Bind(wx.EVT_BUTTON, self.on_mute_remove)
+        self.muted_repo_entry.Bind(wx.EVT_TEXT_ENTER, self.on_mute_add)
 
     def on_char_hook(self, event):
         """Handle key events."""
@@ -390,13 +419,16 @@ class OptionsDialog(wx.Dialog):
 
         # Feed filter settings (per account)
         if self.app.currentAccount:
-            from models.feed_filter import load_visible_types
+            from models.feed_filter import load_visible_types, load_muted_repos
             visible = load_visible_types(self.app.currentAccount.prefs)
             for event_type, cb in self.filter_checkboxes.items():
                 cb.SetValue(True if visible is None else event_type in visible)
+            muted = load_muted_repos(self.app.currentAccount.prefs) or set()
+            self.muted_repos_list.Set(sorted(muted))
         else:
             for cb in self.filter_checkboxes.values():
                 cb.SetValue(True)
+            self.muted_repos_list.Clear()
 
     def save_settings(self):
         """Save settings from the dialog."""
@@ -484,9 +516,11 @@ class OptionsDialog(wx.Dialog):
 
         # Save feed filter settings (per account)
         if self.app.currentAccount:
-            from models.feed_filter import save_visible_types
+            from models.feed_filter import save_visible_types, save_muted_repos
             visible = {et for et, cb in self.filter_checkboxes.items() if cb.GetValue()}
             save_visible_types(self.app.currentAccount.prefs, visible)
+            muted = {self.muted_repos_list.GetString(i) for i in range(self.muted_repos_list.GetCount())}
+            save_muted_repos(self.app.currentAccount.prefs, muted)
             from GUI import main as _main
             if _main.window:
                 _main.window._render_feed_list()
@@ -560,6 +594,30 @@ class OptionsDialog(wx.Dialog):
         """Uncheck all feed filter checkboxes."""
         for cb in self.filter_checkboxes.values():
             cb.SetValue(False)
+
+    def on_mute_add(self, event):
+        """Add a repo to the muted list."""
+        repo = self.muted_repo_entry.GetValue().strip()
+        if not repo:
+            return
+        # Basic format validation
+        if "/" not in repo or repo.startswith("/") or repo.endswith("/"):
+            wx.MessageBox(
+                "Please enter a repository in owner/repo format.\nExample: torvalds/linux",
+                "Invalid Format",
+                wx.OK | wx.ICON_WARNING,
+            )
+            return
+        existing = [self.muted_repos_list.GetString(i) for i in range(self.muted_repos_list.GetCount())]
+        if repo not in existing:
+            self.muted_repos_list.Append(repo)
+        self.muted_repo_entry.SetValue("")
+
+    def on_mute_remove(self, event):
+        """Remove the selected repo from the muted list."""
+        sel = self.muted_repos_list.GetSelection()
+        if sel != wx.NOT_FOUND:
+            self.muted_repos_list.Delete(sel)
 
     def on_ok(self, event):
         """Handle OK button."""

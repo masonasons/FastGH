@@ -927,9 +927,10 @@ class MainGui(wx.Frame):
 
     def _render_feed_list(self):
         """Render feed list from current event data while preserving selection."""
-        from models.feed_filter import load_visible_types, filter_feed
+        from models.feed_filter import load_visible_types, load_muted_repos, filter_feed
         visible = load_visible_types(self.app.currentAccount.prefs) if self.app.currentAccount else None
-        self._visible_feed = filter_feed(self.feed, visible)
+        muted_repos = load_muted_repos(self.app.currentAccount.prefs) if self.app.currentAccount else None
+        self._visible_feed = filter_feed(self.feed, visible, muted_repos)
 
         selection = self.feed_list.GetSelection()
         self.feed_list.Clear()
