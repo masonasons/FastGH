@@ -12,11 +12,14 @@ from models.feed_filter import (
     CONFIG_KEY,
     FILTER_GROUPS,
     MUTED_REPOS_KEY,
+    USER_FILTERS_KEY,
     filter_feed,
     is_event_visible,
     load_muted_repos,
+    load_user_filters,
     load_visible_types,
     save_muted_repos,
+    save_user_filters,
     save_visible_types,
 )
 
@@ -26,12 +29,12 @@ from models.feed_filter import (
 # ---------------------------------------------------------------------------
 
 
-def _make_event(event_type: str, repo: str = "owner/repo") -> Event:
+def _make_event(event_type: str, repo: str = "owner/repo", actor: str = "alice") -> Event:
     return Event.from_api(
         {
             "id": "1",
             "type": event_type,
-            "actor": {"id": 1, "login": "alice", "avatar_url": ""},
+            "actor": {"id": 1, "login": actor, "avatar_url": ""},
             "repo": {"id": 1, "name": repo, "url": ""},
             "payload": {},
             "public": True,
@@ -610,3 +613,242 @@ def test_saving_muted_repos_for_b_does_not_affect_a():
 
 def test_muted_repos_key_value():
     assert MUTED_REPOS_KEY == "feed_muted_repos"
+
+
+# ---------------------------------------------------------------------------
+# load_user_filters — baseline
+# ---------------------------------------------------------------------------
+
+
+def test_load_user_filters_absent_key_returns_none():
+    assert load_user_filters({}) is None
+
+
+def test_load_user_filters_empty_dict_returns_empty_dict():
+    assert load_user_filters({USER_FILTERS_KEY: {}}) == {}
+
+
+def test_load_user_filters_single_user_all_types():
+    result = load_user_filters({USER_FILTERS_KEY: {"alice": ["PushEvent"]}})
+    assert result == {"alice": {"PushEvent"}}
+
+
+def test_load_user_filters_multiple_users():
+    result = load_user_filters({
+        USER_FILTERS_KEY: {"alice": ["PushEvent"], "bob": ["ForkEvent", "WatchEvent"]}
+    })
+    assert result == {"alice": {"PushEvent"}, "bob": {"ForkEvent", "WatchEvent"}}
+
+
+def test_load_user_filters_empty_list_means_muted():
+    result = load_user_filters({USER_FILTERS_KEY: {"alice": []}})
+    assert result == {"alice": set()}
+
+
+# ---------------------------------------------------------------------------
+# load_user_filters — corrupt / invalid stored data
+# ---------------------------------------------------------------------------
+
+
+def test_load_user_filters_non_dict_top_level_returns_none():
+    assert load_user_filters({USER_FILTERS_KEY: ["alice"]}) is None
+
+
+def test_load_user_filters_string_top_level_returns_none():
+    assert load_user_filters({USER_FILTERS_KEY: "alice"}) is None
+
+
+def test_load_user_filters_none_top_level_returns_none():
+    assert load_user_filters({USER_FILTERS_KEY: None}) is None
+
+
+def test_load_user_filters_integer_top_level_returns_none():
+    assert load_user_filters({USER_FILTERS_KEY: 42}) is None
+
+
+def test_load_user_filters_invalid_username_key_skipped():
+    result = load_user_filters({USER_FILTERS_KEY: {42: ["PushEvent"], "alice": ["ForkEvent"]}})
+    assert result == {"alice": {"ForkEvent"}}
+
+
+def test_load_user_filters_invalid_types_list_entry_skipped():
+    result = load_user_filters({USER_FILTERS_KEY: {"alice": "PushEvent", "bob": ["ForkEvent"]}})
+    assert result == {"bob": {"ForkEvent"}}
+
+
+def test_load_user_filters_non_string_types_dropped():
+    result = load_user_filters({USER_FILTERS_KEY: {"alice": [42, None, "PushEvent"]}})
+    assert result == {"alice": {"PushEvent"}}
+
+
+# ---------------------------------------------------------------------------
+# save_user_filters
+# ---------------------------------------------------------------------------
+
+
+def test_save_user_filters_writes_sorted_lists():
+    prefs = {}
+    save_user_filters(prefs, {"alice": {"WatchEvent", "ForkEvent", "PushEvent"}})
+    assert prefs[USER_FILTERS_KEY] == {"alice": ["ForkEvent", "PushEvent", "WatchEvent"]}
+
+
+def test_save_user_filters_empty_set_means_muted():
+    prefs = {}
+    save_user_filters(prefs, {"alice": set()})
+    assert prefs[USER_FILTERS_KEY] == {"alice": []}
+
+
+def test_save_user_filters_multiple_users():
+    prefs = {}
+    save_user_filters(prefs, {"alice": {"PushEvent"}, "bob": set()})
+    assert prefs[USER_FILTERS_KEY]["alice"] == ["PushEvent"]
+    assert prefs[USER_FILTERS_KEY]["bob"] == []
+
+
+def test_save_user_filters_uses_correct_key():
+    prefs = {}
+    save_user_filters(prefs, {"alice": {"PushEvent"}})
+    assert USER_FILTERS_KEY in prefs
+
+
+def test_save_user_filters_overwrites_existing():
+    prefs = {USER_FILTERS_KEY: {"old": ["PushEvent"]}}
+    save_user_filters(prefs, {"new": {"ForkEvent"}})
+    assert "old" not in prefs[USER_FILTERS_KEY]
+    assert prefs[USER_FILTERS_KEY]["new"] == ["ForkEvent"]
+
+
+def test_save_user_filters_empty_dict():
+    prefs = {}
+    save_user_filters(prefs, {})
+    assert prefs[USER_FILTERS_KEY] == {}
+
+
+# ---------------------------------------------------------------------------
+# filter_feed — user filters
+# ---------------------------------------------------------------------------
+
+
+def test_filter_feed_user_filters_none_uses_global():
+    events = [_make_event("PushEvent", actor="alice"), _make_event("ForkEvent", actor="alice")]
+    result = filter_feed(events, {"PushEvent"}, None, None)
+    assert len(result) == 1
+    assert result[0].type == "PushEvent"
+
+
+def test_filter_feed_user_filter_overrides_global_for_that_actor():
+    # Global hides ForkEvent, but alice has a rule allowing it
+    events = [_make_event("ForkEvent", actor="alice")]
+    result = filter_feed(events, {"PushEvent"}, None, {"alice": {"ForkEvent"}})
+    assert len(result) == 1
+
+
+def test_filter_feed_user_filter_empty_set_mutes_user():
+    events = [_make_event("PushEvent", actor="alice"), _make_event("PushEvent", actor="bob")]
+    result = filter_feed(events, {"PushEvent"}, None, {"alice": set()})
+    assert len(result) == 1
+    assert result[0].actor.login == "bob"
+
+
+def test_filter_feed_user_filter_does_not_affect_other_actors():
+    events = [
+        _make_event("ForkEvent", actor="alice"),
+        _make_event("ForkEvent", actor="bob"),
+    ]
+    # alice has a rule (PushEvent only), bob uses global (all)
+    result = filter_feed(events, None, None, {"alice": {"PushEvent"}})
+    assert len(result) == 1
+    assert result[0].actor.login == "bob"
+
+
+def test_filter_feed_user_filter_type_in_rule_passes():
+    events = [_make_event("PushEvent", actor="alice")]
+    result = filter_feed(events, None, None, {"alice": {"PushEvent", "ForkEvent"}})
+    assert len(result) == 1
+
+
+def test_filter_feed_user_filter_type_not_in_rule_hidden():
+    events = [_make_event("WatchEvent", actor="alice")]
+    result = filter_feed(events, None, None, {"alice": {"PushEvent"}})
+    assert result == []
+
+
+def test_filter_feed_muted_repo_beats_user_filter():
+    # Even if actor has a permissive user rule, muted repo wins
+    events = [_make_event("PushEvent", repo="muted/repo", actor="alice")]
+    result = filter_feed(events, None, {"muted/repo"}, {"alice": set(ALL_EVENT_TYPES)})
+    assert result == []
+
+
+def test_filter_feed_all_three_filters_interact():
+    events = [
+        _make_event("PushEvent", repo="muted/repo", actor="alice"),  # blocked by repo
+        _make_event("ForkEvent", repo="safe/repo", actor="alice"),   # alice rule: PushEvent only → hidden
+        _make_event("PushEvent", repo="safe/repo", actor="alice"),   # alice rule: passes
+        _make_event("ForkEvent", repo="safe/repo", actor="bob"),     # global: PushEvent only → hidden
+        _make_event("PushEvent", repo="safe/repo", actor="bob"),     # global: passes
+    ]
+    result = filter_feed(events, {"PushEvent"}, {"muted/repo"}, {"alice": {"PushEvent"}})
+    assert len(result) == 2
+    assert all(e.type == "PushEvent" for e in result)
+
+
+def test_filter_feed_user_filters_empty_dict_uses_global():
+    events = [_make_event("ForkEvent", actor="alice")]
+    result = filter_feed(events, {"PushEvent"}, None, {})
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# User filters roundtrips
+# ---------------------------------------------------------------------------
+
+
+def test_user_filters_roundtrip_single_user():
+    prefs = {}
+    save_user_filters(prefs, {"alice": {"PushEvent", "ForkEvent"}})
+    result = load_user_filters(prefs)
+    assert result == {"alice": {"PushEvent", "ForkEvent"}}
+
+
+def test_user_filters_roundtrip_muted_user():
+    prefs = {}
+    save_user_filters(prefs, {"alice": set()})
+    result = load_user_filters(prefs)
+    assert result == {"alice": set()}
+
+
+def test_user_filters_roundtrip_multiple_users():
+    original = {"alice": {"PushEvent"}, "bob": set(), "charlie": set(ALL_EVENT_TYPES)}
+    prefs = {}
+    save_user_filters(prefs, original)
+    assert load_user_filters(prefs) == original
+
+
+def test_user_filters_roundtrip_empty_dict():
+    prefs = {}
+    save_user_filters(prefs, {})
+    result = load_user_filters(prefs)
+    assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# User filters account isolation
+# ---------------------------------------------------------------------------
+
+
+def test_user_filters_different_prefs_independent():
+    prefs_a = {USER_FILTERS_KEY: {"alice": ["PushEvent"]}}
+    prefs_b = {USER_FILTERS_KEY: {"bob": []}}
+    assert load_user_filters(prefs_a) != load_user_filters(prefs_b)
+
+
+def test_saving_user_filters_for_b_does_not_affect_a():
+    prefs_a = {USER_FILTERS_KEY: {"alice": ["PushEvent"]}}
+    prefs_b = {}
+    save_user_filters(prefs_b, {"bob": set()})
+    assert load_user_filters(prefs_a) == {"alice": {"PushEvent"}}
+
+
+def test_user_filters_key_value():
+    assert USER_FILTERS_KEY == "feed_user_filters"

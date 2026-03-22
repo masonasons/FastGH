@@ -90,6 +90,7 @@ FILTER_GROUPS: list[tuple[str, list[str]]] = [
 # Key written to each account's config JSON.
 CONFIG_KEY = "feed_visible_event_types"
 MUTED_REPOS_KEY = "feed_muted_repos"
+USER_FILTERS_KEY = "feed_user_filters"
 
 # ---------------------------------------------------------------------------
 # Core functions
@@ -163,6 +164,42 @@ def save_muted_repos(account_prefs, muted: set[str]) -> None:
     account_prefs[MUTED_REPOS_KEY] = sorted(muted)
 
 
+def load_user_filters(account_prefs) -> Optional[dict]:
+    """Return per-user filter rules as {username: set[str]}.
+
+    Return values:
+      None        — key is absent; no per-user rules configured
+      {}          — key is present but no users configured
+      {user: set} — one or more user rules; empty set means mute that user
+
+    Invalid top-level value returns None.  Invalid per-user entries are
+    silently skipped so one bad entry does not wipe the whole config.
+    """
+    raw = account_prefs.get(USER_FILTERS_KEY, None)
+
+    if raw is None:
+        return None
+
+    if not isinstance(raw, dict):
+        return None
+
+    result: dict = {}
+    for username, types in raw.items():
+        if not isinstance(username, str):
+            continue
+        if not isinstance(types, list):
+            continue
+        result[username] = {t for t in types if isinstance(t, str)}
+    return result
+
+
+def save_user_filters(account_prefs, user_filters: dict) -> None:
+    """Persist user filter rules.  Each type list is stored sorted."""
+    account_prefs[USER_FILTERS_KEY] = {
+        username: sorted(types) for username, types in user_filters.items()
+    }
+
+
 def is_event_visible(event, visible: Optional[set[str]]) -> bool:
     """Return True if *event* should appear in the feed.
 
@@ -179,12 +216,15 @@ def filter_feed(
     events,
     visible: Optional[set[str]],
     muted_repos: Optional[set[str]] = None,
+    user_filters: Optional[dict] = None,
 ) -> list:
     """Return a new list containing only the visible events.
 
     Filters are applied in order:
       1. Muted repos (blacklist) — events from a muted repo are always hidden.
-      2. Visible types (whitelist) — if configured, only listed types pass.
+      2. Per-user override — if the actor has a rule, that rule's type set is
+         used instead of the global visible set (empty set = mute that user).
+      3. Global visible types (whitelist) — applied to actors without a rule.
 
     Does not mutate the input iterable.
     """
@@ -192,7 +232,10 @@ def filter_feed(
     for e in events:
         if muted_repos and e.repo.name in muted_repos:
             continue
-        if visible is not None and e.type not in visible:
+        if user_filters and e.actor.login in user_filters:
+            if e.type not in user_filters[e.actor.login]:
+                continue
+        elif visible is not None and e.type not in visible:
             continue
         result.append(e)
     return result

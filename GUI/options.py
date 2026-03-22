@@ -320,6 +320,34 @@ class OptionsDialog(wx.Dialog):
         bulk_sizer.Add(self.deselect_all_btn, 0)
         main_sizer.Add(bulk_sizer, 0, wx.LEFT | wx.BOTTOM, 10)
 
+        # User Filters section
+        user_box = wx.StaticBox(panel, label="User Filters")
+        user_sizer = wx.StaticBoxSizer(user_box, wx.VERTICAL)
+
+        user_intro = wx.StaticText(
+            panel,
+            label=(
+                "Per-user rules override the global event type filter for that user.\n"
+                "Muted users are hidden entirely regardless of event type."
+            )
+        )
+        user_intro.Wrap(500)
+        user_sizer.Add(user_intro, 0, wx.ALL, 8)
+
+        self.user_filters_list = wx.ListBox(panel, size=(-1, 90), style=wx.LB_SINGLE)
+        user_sizer.Add(self.user_filters_list, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+
+        user_btn_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.user_filter_add_btn = wx.Button(panel, label="&Add User...")
+        user_btn_row.Add(self.user_filter_add_btn, 0, wx.RIGHT, 4)
+        self.user_filter_edit_btn = wx.Button(panel, label="&Edit...")
+        user_btn_row.Add(self.user_filter_edit_btn, 0, wx.RIGHT, 4)
+        self.user_filter_remove_btn = wx.Button(panel, label="Remo&ve")
+        user_btn_row.Add(self.user_filter_remove_btn, 0)
+        user_sizer.Add(user_btn_row, 0, wx.ALL, 8)
+
+        main_sizer.Add(user_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         # Muted Repositories section
         mute_box = wx.StaticBox(panel, label="Muted Repositories")
         mute_sizer = wx.StaticBoxSizer(mute_box, wx.VERTICAL)
@@ -367,6 +395,9 @@ class OptionsDialog(wx.Dialog):
         self.mute_add_btn.Bind(wx.EVT_BUTTON, self.on_mute_add)
         self.mute_remove_btn.Bind(wx.EVT_BUTTON, self.on_mute_remove)
         self.muted_repo_entry.Bind(wx.EVT_TEXT_ENTER, self.on_mute_add)
+        self.user_filter_add_btn.Bind(wx.EVT_BUTTON, self.on_user_filter_add)
+        self.user_filter_edit_btn.Bind(wx.EVT_BUTTON, self.on_user_filter_edit)
+        self.user_filter_remove_btn.Bind(wx.EVT_BUTTON, self.on_user_filter_remove)
 
     def on_char_hook(self, event):
         """Handle key events."""
@@ -419,16 +450,23 @@ class OptionsDialog(wx.Dialog):
 
         # Feed filter settings (per account)
         if self.app.currentAccount:
-            from models.feed_filter import load_visible_types, load_muted_repos
+            from models.feed_filter import load_visible_types, load_muted_repos, load_user_filters
             visible = load_visible_types(self.app.currentAccount.prefs)
             for event_type, cb in self.filter_checkboxes.items():
                 cb.SetValue(True if visible is None else event_type in visible)
             muted = load_muted_repos(self.app.currentAccount.prefs) or set()
             self.muted_repos_list.Set(sorted(muted))
+            user_filters = load_user_filters(self.app.currentAccount.prefs) or {}
+            self.user_filters_list.Clear()
+            for username, types in sorted(user_filters.items()):
+                label = self._user_filter_label(username, types)
+                idx = self.user_filters_list.Append(label)
+                self.user_filters_list.SetClientData(idx, (username, types))
         else:
             for cb in self.filter_checkboxes.values():
                 cb.SetValue(True)
             self.muted_repos_list.Clear()
+            self.user_filters_list.Clear()
 
     def save_settings(self):
         """Save settings from the dialog."""
@@ -521,6 +559,12 @@ class OptionsDialog(wx.Dialog):
             save_visible_types(self.app.currentAccount.prefs, visible)
             muted = {self.muted_repos_list.GetString(i) for i in range(self.muted_repos_list.GetCount())}
             save_muted_repos(self.app.currentAccount.prefs, muted)
+            user_filters = {}
+            for i in range(self.user_filters_list.GetCount()):
+                username, types = self.user_filters_list.GetClientData(i)
+                user_filters[username] = types
+            from models.feed_filter import save_user_filters
+            save_user_filters(self.app.currentAccount.prefs, user_filters)
             from GUI import main as _main
             if _main.window:
                 _main.window._render_feed_list()
@@ -619,6 +663,46 @@ class OptionsDialog(wx.Dialog):
         if sel != wx.NOT_FOUND:
             self.muted_repos_list.Delete(sel)
 
+    # ---- User filter helpers ----
+
+    def _user_filter_label(self, username: str, types: set) -> str:
+        if not types:
+            return f"{username} — muted"
+        return f"{username} — {len(types)} type(s)"
+
+    def on_user_filter_add(self, event):
+        dlg = UserFilterDialog(self)
+        if dlg.ShowModal() == wx.ID_OK:
+            username, types = dlg.get_result()
+            if username:
+                # Replace if username already exists
+                for i in range(self.user_filters_list.GetCount()):
+                    if self.user_filters_list.GetClientData(i) == username:
+                        self.user_filters_list.Delete(i)
+                        break
+                label = self._user_filter_label(username, types)
+                idx = self.user_filters_list.Append(label)
+                self.user_filters_list.SetClientData(idx, (username, types))
+        dlg.Destroy()
+
+    def on_user_filter_edit(self, event):
+        sel = self.user_filters_list.GetSelection()
+        if sel == wx.NOT_FOUND:
+            return
+        username, types = self.user_filters_list.GetClientData(sel)
+        dlg = UserFilterDialog(self, username=username, visible_types=types)
+        if dlg.ShowModal() == wx.ID_OK:
+            new_username, new_types = dlg.get_result()
+            label = self._user_filter_label(new_username, new_types)
+            self.user_filters_list.SetString(sel, label)
+            self.user_filters_list.SetClientData(sel, (new_username, new_types))
+        dlg.Destroy()
+
+    def on_user_filter_remove(self, event):
+        sel = self.user_filters_list.GetSelection()
+        if sel != wx.NOT_FOUND:
+            self.user_filters_list.Delete(sel)
+
     def on_ok(self, event):
         """Handle OK button."""
         if self.save_settings():
@@ -635,3 +719,111 @@ class OptionsDialog(wx.Dialog):
     def on_close(self, event):
         """Handle close."""
         self.EndModal(wx.ID_CANCEL)
+
+
+class UserFilterDialog(wx.Dialog):
+    """Sub-dialog for configuring per-user event type filter rules."""
+
+    def __init__(self, parent, username: str = "", visible_types=None):
+        """
+        username      — pre-filled when editing; empty when adding
+        visible_types — set of visible event types (None = all checked)
+        """
+        title = "Edit User Filter" if username else "Add User Filter"
+        super().__init__(parent, title=title, size=(480, 600))
+
+        self._init_ui(username, visible_types)
+        self._bind()
+        self.Center()
+
+    def _init_ui(self, username: str, visible_types):
+        from models.feed_filter import FILTER_GROUPS
+        panel = wx.Panel(self)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Username row
+        name_row = wx.BoxSizer(wx.HORIZONTAL)
+        name_label = wx.StaticText(panel, label="GitHub &username:")
+        name_row.Add(name_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+        self.username_ctrl = wx.TextCtrl(panel, value=username, size=(220, -1))
+        if username:
+            self.username_ctrl.SetEditable(False)
+        name_row.Add(self.username_ctrl, 1)
+        sizer.Add(name_row, 0, wx.ALL | wx.EXPAND, 10)
+
+        # Mute entirely shortcut
+        self.mute_all_cb = wx.CheckBox(panel, label="&Mute this user entirely (hide all their events)")
+        sizer.Add(self.mute_all_cb, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Per-type checkboxes in groups
+        self._type_checkboxes: dict = {}
+        for group_label, event_types in FILTER_GROUPS:
+            group_box = wx.StaticBox(panel, label=group_label)
+            group_sizer = wx.StaticBoxSizer(group_box, wx.VERTICAL)
+            for et in event_types:
+                label = EVENT_DISPLAY_NAMES.get(et, et)
+                cb = wx.CheckBox(panel, label=label)
+                self._type_checkboxes[et] = cb
+                group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 6)
+            group_sizer.AddSpacer(4)
+            sizer.Add(group_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+        # Buttons
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.ok_btn = wx.Button(panel, wx.ID_OK, label="&OK")
+        btn_sizer.Add(self.ok_btn, 0, wx.RIGHT, 5)
+        self.cancel_btn = wx.Button(panel, wx.ID_CANCEL, label="&Cancel")
+        btn_sizer.Add(self.cancel_btn, 0)
+        sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+
+        panel.SetSizer(sizer)
+
+        # Initialise checkbox states
+        if visible_types is None:
+            # New user — default all checked
+            for cb in self._type_checkboxes.values():
+                cb.SetValue(True)
+        elif len(visible_types) == 0:
+            # Muted user
+            self.mute_all_cb.SetValue(True)
+            self._set_type_checkboxes_enabled(False)
+        else:
+            for et, cb in self._type_checkboxes.items():
+                cb.SetValue(et in visible_types)
+
+    def _bind(self):
+        self.mute_all_cb.Bind(wx.EVT_CHECKBOX, self._on_mute_all_toggled)
+        self.ok_btn.Bind(wx.EVT_BUTTON, self._on_ok)
+        self.cancel_btn.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_CANCEL))
+        self.Bind(wx.EVT_CHAR_HOOK, self._on_key)
+
+    def _on_key(self, event):
+        key = event.GetKeyCode()
+        if key == wx.WXK_ESCAPE:
+            self.EndModal(wx.ID_CANCEL)
+        elif key in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
+            self._on_ok(None)
+        else:
+            event.Skip()
+
+    def _set_type_checkboxes_enabled(self, enabled: bool):
+        for cb in self._type_checkboxes.values():
+            cb.Enable(enabled)
+
+    def _on_mute_all_toggled(self, event):
+        muted = self.mute_all_cb.GetValue()
+        self._set_type_checkboxes_enabled(not muted)
+
+    def _on_ok(self, event):
+        username = self.username_ctrl.GetValue().strip()
+        if not username:
+            wx.MessageBox("Please enter a GitHub username.", "Required", wx.OK | wx.ICON_WARNING)
+            return
+        self.EndModal(wx.ID_OK)
+
+    def get_result(self) -> tuple:
+        """Return (username, set_of_visible_types). Empty set = muted."""
+        username = self.username_ctrl.GetValue().strip()
+        if self.mute_all_cb.GetValue():
+            return username, set()
+        return username, {et for et, cb in self._type_checkboxes.items() if cb.GetValue()}
