@@ -94,6 +94,121 @@ class GitProgressDialog(wx.Dialog):
         self.EndModal(wx.ID_OK if success else wx.ID_CANCEL)
 
 
+class RepoSyncConfigDialog(wx.Dialog):
+    """Configure auto pull/push for a repository."""
+
+    def __init__(self, parent, repo: Repository, default_path: str):
+        self.app = get_app()
+        self.repo = repo
+        self.repo_key = repo.full_name
+        self.default_path = default_path
+        self.sync_mgr = self.app.repo_sync
+
+        wx.Dialog.__init__(self, parent, title=f"Auto Sync: {repo.full_name}", size=(620, 320))
+        self.init_ui()
+        self.load_config()
+        theme.apply_theme(self)
+
+    def init_ui(self):
+        panel = wx.Panel(self)
+        main = wx.BoxSizer(wx.VERTICAL)
+
+        self.enable_cb = wx.CheckBox(panel, label="Enable auto sync for this repository")
+        main.Add(self.enable_cb, 0, wx.ALL, 10)
+
+        self.pull_cb = wx.CheckBox(panel, label="Auto pull (git pull --ff-only)")
+        main.Add(self.pull_cb, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        self.push_cb = wx.CheckBox(panel, label="Auto push (push only when branch is ahead and clean)")
+        main.Add(self.push_cb, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        path_row = wx.BoxSizer(wx.HORIZONTAL)
+        path_row.Add(wx.StaticText(panel, label="Local path:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+        self.path_txt = wx.TextCtrl(panel)
+        path_row.Add(self.path_txt, 1, wx.RIGHT, 6)
+        self.path_browse_btn = wx.Button(panel, label="Browse...")
+        path_row.Add(self.path_browse_btn, 0)
+        main.Add(path_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 10)
+
+        run_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.run_sync_btn = wx.Button(panel, label="Run Sync Now")
+        run_row.Add(self.run_sync_btn, 0, wx.RIGHT, 6)
+        self.run_update_btn = wx.Button(panel, label="Run .GITHUB Repo Update")
+        run_row.Add(self.run_update_btn, 0)
+        main.Add(run_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        main.AddStretchSpacer()
+
+        btn_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.save_btn = wx.Button(panel, wx.ID_OK, "&Save")
+        self.cancel_btn = wx.Button(panel, wx.ID_CANCEL, "&Cancel")
+        btn_row.Add(self.save_btn, 0, wx.RIGHT, 8)
+        btn_row.Add(self.cancel_btn, 0)
+        main.Add(btn_row, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+
+        panel.SetSizer(main)
+
+        self.path_browse_btn.Bind(wx.EVT_BUTTON, self.on_browse_path)
+        self.run_sync_btn.Bind(wx.EVT_BUTTON, self.on_run_sync_now)
+        self.run_update_btn.Bind(wx.EVT_BUTTON, self.on_run_repo_update)
+        self.save_btn.Bind(wx.EVT_BUTTON, self.on_save)
+
+    def load_config(self):
+        cfg = self.sync_mgr.get_repo_config(self.repo_key, default_path=self.default_path)
+        self.enable_cb.SetValue(cfg.get("enabled", False))
+        self.pull_cb.SetValue(cfg.get("auto_pull", True))
+        self.push_cb.SetValue(cfg.get("auto_push", False))
+        self.path_txt.SetValue(cfg.get("path", self.default_path))
+
+    def on_browse_path(self, event):
+        current = self.path_txt.GetValue().strip()
+        if not current or not os.path.isdir(current):
+            current = os.path.expanduser("~")
+        dlg = wx.DirDialog(self, "Select Local Repository Path", defaultPath=current, style=wx.DD_DEFAULT_STYLE)
+        if dlg.ShowModal() == wx.ID_OK:
+            self.path_txt.SetValue(dlg.GetPath())
+        dlg.Destroy()
+
+    def _current_cfg(self) -> dict:
+        return {
+            "enabled": self.enable_cb.GetValue(),
+            "auto_pull": self.pull_cb.GetValue(),
+            "auto_push": self.push_cb.GetValue(),
+            "path": self.path_txt.GetValue().strip(),
+        }
+
+    def on_run_repo_update(self, event):
+        cfg = self._current_cfg()
+        path = cfg["path"]
+        if not path:
+            wx.MessageBox("Set a local path first.", "Missing Path", wx.OK | wx.ICON_WARNING)
+            return
+        try:
+            self.sync_mgr.run_repo_update(path)
+            wx.MessageBox("Repo update completed.", "Repo Update", wx.OK | wx.ICON_INFORMATION)
+        except Exception as exc:
+            wx.MessageBox(str(exc), "Repo Update Failed", wx.OK | wx.ICON_ERROR)
+
+    def on_run_sync_now(self, event):
+        cfg = self._current_cfg()
+        result = self.sync_mgr.sync_one(self.repo_key, cfg)
+        if result.ok:
+            wx.MessageBox(result.message, "Repo Sync", wx.OK | wx.ICON_INFORMATION)
+        else:
+            wx.MessageBox(result.message, "Repo Sync Failed", wx.OK | wx.ICON_ERROR)
+
+    def on_save(self, event):
+        cfg = self._current_cfg()
+        self.sync_mgr.set_repo_config(
+            self.repo_key,
+            enabled=cfg["enabled"],
+            auto_pull=cfg["auto_pull"],
+            auto_push=cfg["auto_push"],
+            path=cfg["path"],
+        )
+        self.EndModal(wx.ID_OK)
+
+
 class ViewRepoDialog(wx.Dialog):
     """Dialog for viewing repository details."""
 
@@ -179,7 +294,10 @@ class ViewRepoDialog(wx.Dialog):
 
         # Git button - will show Clone or Pull based on whether repo exists
         self.git_btn = wx.Button(self.panel, -1, "&Git...")
-        btn_row1.Add(self.git_btn, 0)
+        btn_row1.Add(self.git_btn, 0, wx.RIGHT, 5)
+
+        self.repo_sync_btn = wx.Button(self.panel, -1, "Auto S&ync...")
+        btn_row1.Add(self.repo_sync_btn, 0)
 
         self.main_box.Add(btn_row1, 0, wx.ALL | wx.ALIGN_CENTER, 5)
 
@@ -228,6 +346,7 @@ class ViewRepoDialog(wx.Dialog):
         self.copy_url_btn.Bind(wx.EVT_BUTTON, self.on_copy_url)
         self.copy_clone_btn.Bind(wx.EVT_BUTTON, self.on_copy_clone)
         self.git_btn.Bind(wx.EVT_BUTTON, self.on_git)
+        self.repo_sync_btn.Bind(wx.EVT_BUTTON, self.on_repo_sync)
         self.files_btn.Bind(wx.EVT_BUTTON, self.on_view_files)
         self.issues_btn.Bind(wx.EVT_BUTTON, self.on_view_issues)
         self.prs_btn.Bind(wx.EVT_BUTTON, self.on_view_prs)
@@ -372,6 +491,12 @@ class ViewRepoDialog(wx.Dialog):
         else:
             self.do_git_clone()
 
+    def on_repo_sync(self, event):
+        """Open auto-sync configuration for this repository."""
+        dlg = RepoSyncConfigDialog(self, self.repo, self.get_repo_path())
+        dlg.ShowModal()
+        dlg.Destroy()
+
     def do_git_clone(self):
         """Clone the repository."""
         git_path = self.app.prefs.git_path
@@ -465,7 +590,16 @@ class ViewRepoDialog(wx.Dialog):
                 final_output[0] = "".join(output_lines)
                 success[0] = process.returncode == 0 and not progress_dlg.cancelled
 
-                if not success[0] and not progress_dlg.cancelled:
+                if success[0] and self.app.prefs.git_lfs_enabled and operation in ("clone", "pull"):
+                    lfs_repo_path = self.get_repo_path() if operation == "clone" else cwd
+                    lfs_success, lfs_msg = self._run_lfs_post_sync(lfs_repo_path)
+                    if lfs_msg:
+                        wx.CallAfter(progress_dlg.append_output, "\n" + lfs_msg + "\n")
+                    if not lfs_success:
+                        error_message[0] = lfs_msg or "git lfs operation failed"
+                        success[0] = False
+
+                if not success[0] and not progress_dlg.cancelled and not error_message[0]:
                     error_message[0] = final_output[0]
 
             except FileNotFoundError:
@@ -513,6 +647,42 @@ class ViewRepoDialog(wx.Dialog):
                 f"{operation.capitalize()} Failed",
                 wx.OK | wx.ICON_ERROR
             )
+
+    def _run_lfs_post_sync(self, repo_path):
+        """Run optional git lfs steps after clone/pull."""
+        if not os.path.isdir(os.path.join(repo_path, ".git")):
+            return False, f"LFS skipped: repo path not found: {repo_path}"
+
+        creationflags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+
+        def run_cmd(args):
+            result = subprocess.run(
+                ["git"] + args,
+                cwd=repo_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creationflags
+            )
+            output = (result.stdout or result.stderr or "").strip()
+            return result.returncode, output
+
+        code, _ = run_cmd(["lfs", "version"])
+        if code != 0:
+            return True, "Git LFS not installed; continuing without LFS objects."
+
+        code, out1 = run_cmd(["lfs", "install", "--local"])
+        if code != 0:
+            return False, f"git lfs install failed:\n{out1}"
+
+        code, out2 = run_cmd(["lfs", "pull"])
+        if code != 0:
+            return False, f"git lfs pull failed:\n{out2}"
+
+        msg = "Git LFS sync completed."
+        if out2:
+            msg += f"\n{out2}"
+        return True, msg
 
     def on_view_files(self, event):
         """Open file browser dialog."""
