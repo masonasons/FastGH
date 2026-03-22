@@ -17,6 +17,29 @@ else:
     HOTKEY_SUPPORTED = False
 
 
+EVENT_DISPLAY_NAMES = {
+    "PullRequestEvent":              "&Pull Request opened/closed/merged",
+    "PullRequestReviewEvent":        "Pull Request &Review submitted",
+    "PullRequestReviewCommentEvent": "Pull Request Review &Comment",
+    "PullRequestReviewThreadEvent":  "Pull Request Review &Thread",
+    "IssuesEvent":                   "&Issue opened/closed/labeled",
+    "IssueCommentEvent":             "Issue C&omment",
+    "PushEvent":                     "P&ush (commits)",
+    "CommitCommentEvent":            "Commit Comm&ent",
+    "CreateEvent":                   "C&reate branch/tag/repo",
+    "DeleteEvent":                   "&Delete branch/tag",
+    "ForkEvent":                     "&Fork",
+    "WatchEvent":                    "&Star (watch event)",
+    "MemberEvent":                   "&Member added as collaborator",
+    "GollumEvent":                   "&Wiki page updated",
+    "ReleaseEvent":                  "&Release published",
+    "DiscussionEvent":               "&Discussion created/answered",
+    "DiscussionCommentEvent":        "Discussion Co&mment",
+    "SponsorshipEvent":              "Spon&sorship",
+    "PublicEvent":                   "Repo made P&ublic",
+}
+
+
 class OptionsDialog(wx.Dialog):
     """Dialog for application options."""
 
@@ -24,7 +47,7 @@ class OptionsDialog(wx.Dialog):
         self.app = get_app()
         self.parent_window = parent
 
-        wx.Dialog.__init__(self, parent, title="Options", size=(560, 860))
+        wx.Dialog.__init__(self, parent, title="Options", size=(580, 900))
 
         self.init_ui()
         self.bind_events()
@@ -34,265 +57,22 @@ class OptionsDialog(wx.Dialog):
     def init_ui(self):
         """Initialize the UI."""
         self.panel = wx.Panel(self)
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        outer_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Commits section
-        commits_box = wx.StaticBox(self.panel, label="Commits")
-        commits_sizer = wx.StaticBoxSizer(commits_box, wx.VERTICAL)
+        self.notebook = wx.Notebook(self.panel)
 
-        # Commit limit row
-        limit_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.general_panel = wx.ScrolledWindow(self.notebook)
+        self.general_panel.SetScrollRate(0, 20)
+        self._build_general_tab(self.general_panel)
+        self.notebook.AddPage(self.general_panel, "General")
 
-        limit_label = wx.StaticText(self.panel, label="Commit &limit when loading:")
-        limit_row.Add(limit_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.filters_panel = wx.ScrolledWindow(self.notebook)
+        self.filters_panel.SetScrollRate(0, 20)
+        self._build_filters_tab(self.filters_panel)
+        self.notebook.AddPage(self.filters_panel, "Feed Filters")
 
-        self.limit_spin = wx.SpinCtrl(
-            self.panel,
-            min=0,
-            max=5000,
-            initial=0,
-            style=wx.SP_ARROW_KEYS
-        )
-        self.limit_spin.SetToolTip("Number of commits to load (0 = all commits)")
-        limit_row.Add(self.limit_spin, 0, wx.RIGHT, 10)
+        outer_sizer.Add(self.notebook, 1, wx.EXPAND | wx.ALL, 5)
 
-        limit_hint = wx.StaticText(self.panel, label="(0 = all)")
-        limit_row.Add(limit_hint, 0, wx.ALIGN_CENTER_VERTICAL)
-
-        commits_sizer.Add(limit_row, 0, wx.ALL | wx.EXPAND, 10)
-
-        main_sizer.Add(commits_sizer, 0, wx.EXPAND | wx.ALL, 10)
-
-        # Downloads section
-        downloads_box = wx.StaticBox(self.panel, label="Downloads")
-        downloads_sizer = wx.StaticBoxSizer(downloads_box, wx.VERTICAL)
-
-        # Download location row
-        download_row = wx.BoxSizer(wx.HORIZONTAL)
-
-        download_label = wx.StaticText(self.panel, label="&Download location:")
-        download_row.Add(download_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-
-        self.download_path = wx.TextCtrl(self.panel, size=(280, -1))
-        self.download_path.SetToolTip("Default folder for downloading release artifacts")
-        download_row.Add(self.download_path, 1, wx.RIGHT, 5)
-
-        self.browse_btn = wx.Button(self.panel, label="&Browse...")
-        download_row.Add(self.browse_btn, 0)
-
-        downloads_sizer.Add(download_row, 0, wx.ALL | wx.EXPAND, 10)
-
-        main_sizer.Add(downloads_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Git section
-        git_box = wx.StaticBox(self.panel, label="Git")
-        git_sizer = wx.StaticBoxSizer(git_box, wx.VERTICAL)
-
-        # Git path row
-        git_row = wx.BoxSizer(wx.HORIZONTAL)
-
-        git_label = wx.StaticText(self.panel, label="&Git repositories path:")
-        git_row.Add(git_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-
-        self.git_path = wx.TextCtrl(self.panel, size=(280, -1))
-        self.git_path.SetToolTip("Folder where repositories will be cloned")
-        git_row.Add(self.git_path, 1, wx.RIGHT, 5)
-
-        self.git_browse_btn = wx.Button(self.panel, label="Br&owse...")
-        git_row.Add(self.git_browse_btn, 0)
-
-        git_sizer.Add(git_row, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Git clone options
-        self.git_org_structure_cb = wx.CheckBox(
-            self.panel,
-            label="Clone into &owner/repo folder structure"
-        )
-        self.git_org_structure_cb.SetToolTip(
-            "When enabled, repositories are cloned to owner/repo\n"
-            "(e.g., masonasons/FastGH instead of just FastGH)"
-        )
-        git_sizer.Add(self.git_org_structure_cb, 0, wx.LEFT | wx.BOTTOM, 10)
-
-        self.git_recursive_cb = wx.CheckBox(
-            self.panel,
-            label="Clone rec&ursively (include submodules)"
-        )
-        self.git_recursive_cb.SetToolTip(
-            "When enabled, git clone will use --recursive to also clone submodules"
-        )
-        git_sizer.Add(self.git_recursive_cb, 0, wx.LEFT | wx.BOTTOM, 10)
-
-        self.git_lfs_cb = wx.CheckBox(
-            self.panel,
-            label="Enable Git &LFS support for clone/pull/sync"
-        )
-        self.git_lfs_cb.SetToolTip(
-            "Runs git lfs install/pull after clone/pull and during scheduled sync.\n"
-            "If git-lfs is not installed, operations continue with a warning."
-        )
-        git_sizer.Add(self.git_lfs_cb, 0, wx.LEFT | wx.BOTTOM, 10)
-
-        main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Repository sync section
-        sync_box = wx.StaticBox(self.panel, label="Repository Sync")
-        sync_sizer = wx.StaticBoxSizer(sync_box, wx.VERTICAL)
-
-        self.repo_sync_enabled_cb = wx.CheckBox(
-            self.panel,
-            label="Enable scheduled auto sync for configured repositories"
-        )
-        sync_sizer.Add(self.repo_sync_enabled_cb, 0, wx.LEFT | wx.TOP, 10)
-
-        interval_row = wx.BoxSizer(wx.HORIZONTAL)
-        interval_label = wx.StaticText(self.panel, label="Sync interval:")
-        interval_row.Add(interval_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-        self.repo_sync_interval_spin = wx.SpinCtrl(
-            self.panel,
-            min=0,
-            max=240,
-            initial=0,
-            style=wx.SP_ARROW_KEYS
-        )
-        self.repo_sync_interval_spin.SetToolTip("Minutes between sync runs (0 = disabled)")
-        interval_row.Add(self.repo_sync_interval_spin, 0, wx.RIGHT, 5)
-        interval_hint = wx.StaticText(self.panel, label="minutes (0 = disabled)")
-        interval_row.Add(interval_hint, 0, wx.ALIGN_CENTER_VERTICAL)
-        sync_sizer.Add(interval_row, 0, wx.ALL, 10)
-
-        self.repo_sync_use_tools_cb = wx.CheckBox(
-            self.panel,
-            label="Use .GITHUB repo bootstrap updater before git sync"
-        )
-        sync_sizer.Add(self.repo_sync_use_tools_cb, 0, wx.LEFT | wx.BOTTOM, 10)
-
-        tools_row = wx.BoxSizer(wx.HORIZONTAL)
-        tools_label = wx.StaticText(self.panel, label=".GITHUB tools path:")
-        tools_row.Add(tools_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-        self.repo_sync_tools_path = wx.TextCtrl(self.panel, size=(300, -1))
-        tools_row.Add(self.repo_sync_tools_path, 1, wx.RIGHT, 5)
-        self.repo_sync_tools_browse_btn = wx.Button(self.panel, label="Brow&se...")
-        tools_row.Add(self.repo_sync_tools_browse_btn, 0)
-        sync_sizer.Add(tools_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 10)
-
-        main_sizer.Add(sync_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Notifications section
-        notif_box = wx.StaticBox(self.panel, label="Desktop Notifications")
-        notif_sizer = wx.StaticBoxSizer(notif_box, wx.VERTICAL)
-
-        # Checkboxes for notification types
-        self.notify_activity_cb = wx.CheckBox(self.panel, label="Notify on new &activity feed items")
-        notif_sizer.Add(self.notify_activity_cb, 0, wx.LEFT | wx.TOP, 10)
-
-        self.notify_notifications_cb = wx.CheckBox(self.panel, label="Notify on new GitHub &notifications")
-        notif_sizer.Add(self.notify_notifications_cb, 0, wx.LEFT | wx.TOP, 5)
-
-        self.notify_starred_cb = wx.CheckBox(self.panel, label="Notify on &starred repository updates")
-        notif_sizer.Add(self.notify_starred_cb, 0, wx.LEFT | wx.TOP, 5)
-
-        self.notify_watched_cb = wx.CheckBox(self.panel, label="Notify on &watched repository updates")
-        notif_sizer.Add(self.notify_watched_cb, 0, wx.LEFT | wx.TOP, 5)
-
-        self.notify_repo_sync_cb = wx.CheckBox(self.panel, label="Notify on repository &sync results")
-        notif_sizer.Add(self.notify_repo_sync_cb, 0, wx.LEFT | wx.TOP, 5)
-
-        # Auto-refresh interval
-        refresh_row = wx.BoxSizer(wx.HORIZONTAL)
-
-        refresh_label = wx.StaticText(self.panel, label="Auto-&refresh interval:")
-        refresh_row.Add(refresh_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-
-        self.refresh_spin = wx.SpinCtrl(
-            self.panel,
-            min=0,
-            max=60,
-            initial=0,
-            style=wx.SP_ARROW_KEYS
-        )
-        self.refresh_spin.SetToolTip("How often to check for updates (0 = disabled)")
-        refresh_row.Add(self.refresh_spin, 0, wx.RIGHT, 5)
-
-        refresh_hint = wx.StaticText(self.panel, label="minutes (0 = disabled)")
-        refresh_row.Add(refresh_hint, 0, wx.ALIGN_CENTER_VERTICAL)
-
-        notif_sizer.Add(refresh_row, 0, wx.ALL, 10)
-
-        main_sizer.Add(notif_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Hotkey section (only show if supported)
-        if HOTKEY_SUPPORTED:
-            hotkey_box = wx.StaticBox(self.panel, label="Global Hotkey")
-            hotkey_sizer = wx.StaticBoxSizer(hotkey_box, wx.VERTICAL)
-
-            # Hotkey row
-            hotkey_row = wx.BoxSizer(wx.HORIZONTAL)
-
-            hotkey_label = wx.StaticText(self.panel, label="Show/&Hide window:")
-            hotkey_row.Add(hotkey_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-
-            self.hotkey_text = wx.TextCtrl(self.panel, size=(200, -1))
-            self.hotkey_text.SetToolTip(
-                "Global hotkey to show/hide window.\n"
-                "Format: modifier+modifier+key\n"
-                "Modifiers: control, alt, shift, win\n"
-                "Example: control+alt+g"
-            )
-            hotkey_row.Add(self.hotkey_text, 1, wx.RIGHT, 5)
-
-            self.clear_hotkey_btn = wx.Button(self.panel, label="C&lear")
-            hotkey_row.Add(self.clear_hotkey_btn, 0)
-
-            hotkey_sizer.Add(hotkey_row, 0, wx.ALL | wx.EXPAND, 10)
-
-            # Hotkey hint
-            hint_label = wx.StaticText(
-                self.panel,
-                label="Format: control+alt+g, win+shift+h, etc. Leave empty to disable."
-            )
-            hotkey_sizer.Add(hint_label, 0, wx.LEFT | wx.BOTTOM, 10)
-
-            main_sizer.Add(hotkey_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Appearance section
-        appearance_box = wx.StaticBox(self.panel, label="Appearance")
-        appearance_sizer = wx.StaticBoxSizer(appearance_box, wx.VERTICAL)
-
-        # Dark mode row
-        dark_mode_row = wx.BoxSizer(wx.HORIZONTAL)
-
-        dark_mode_label = wx.StaticText(self.panel, label="&Dark mode:")
-        dark_mode_row.Add(dark_mode_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-
-        self.dark_mode_choice = wx.Choice(
-            self.panel,
-            choices=["Off", "Auto (follow system)", "On"]
-        )
-        self.dark_mode_choice.SetToolTip(
-            "Off: Always use light theme\n"
-            "Auto: Follow system theme setting\n"
-            "On: Always use dark theme"
-        )
-        dark_mode_row.Add(self.dark_mode_choice, 0)
-
-        appearance_sizer.Add(dark_mode_row, 0, wx.ALL, 10)
-
-        main_sizer.Add(appearance_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Updates section
-        updates_box = wx.StaticBox(self.panel, label="Updates")
-        updates_sizer = wx.StaticBoxSizer(updates_box, wx.VERTICAL)
-
-        self.check_for_updates_cb = wx.CheckBox(self.panel, label="Check for &updates on startup")
-        updates_sizer.Add(self.check_for_updates_cb, 0, wx.ALL, 10)
-
-        main_sizer.Add(updates_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-
-        # Spacer
-        main_sizer.AddStretchSpacer()
-
-        # Buttons
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         self.ok_btn = wx.Button(self.panel, wx.ID_OK, label="&OK")
@@ -304,9 +84,243 @@ class OptionsDialog(wx.Dialog):
         self.apply_btn = wx.Button(self.panel, label="&Apply")
         btn_sizer.Add(self.apply_btn, 0)
 
-        main_sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+        outer_sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
 
-        self.panel.SetSizer(main_sizer)
+        self.panel.SetSizer(outer_sizer)
+
+    def _build_general_tab(self, panel):
+        """Build the General settings tab content."""
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Commits section
+        commits_box = wx.StaticBox(panel, label="Commits")
+        commits_sizer = wx.StaticBoxSizer(commits_box, wx.VERTICAL)
+
+        limit_row = wx.BoxSizer(wx.HORIZONTAL)
+        limit_label = wx.StaticText(panel, label="Commit &limit when loading:")
+        limit_row.Add(limit_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.limit_spin = wx.SpinCtrl(panel, min=0, max=5000, initial=0, style=wx.SP_ARROW_KEYS)
+        self.limit_spin.SetToolTip("Number of commits to load (0 = all commits)")
+        limit_row.Add(self.limit_spin, 0, wx.RIGHT, 10)
+        limit_hint = wx.StaticText(panel, label="(0 = all)")
+        limit_row.Add(limit_hint, 0, wx.ALIGN_CENTER_VERTICAL)
+        commits_sizer.Add(limit_row, 0, wx.ALL | wx.EXPAND, 10)
+
+        main_sizer.Add(commits_sizer, 0, wx.EXPAND | wx.ALL, 10)
+
+        # Downloads section
+        downloads_box = wx.StaticBox(panel, label="Downloads")
+        downloads_sizer = wx.StaticBoxSizer(downloads_box, wx.VERTICAL)
+
+        download_row = wx.BoxSizer(wx.HORIZONTAL)
+        download_label = wx.StaticText(panel, label="&Download location:")
+        download_row.Add(download_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.download_path = wx.TextCtrl(panel, size=(280, -1))
+        self.download_path.SetToolTip("Default folder for downloading release artifacts")
+        download_row.Add(self.download_path, 1, wx.RIGHT, 5)
+        self.browse_btn = wx.Button(panel, label="&Browse...")
+        download_row.Add(self.browse_btn, 0)
+        downloads_sizer.Add(download_row, 0, wx.ALL | wx.EXPAND, 10)
+
+        main_sizer.Add(downloads_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Git section
+        git_box = wx.StaticBox(panel, label="Git")
+        git_sizer = wx.StaticBoxSizer(git_box, wx.VERTICAL)
+
+        git_row = wx.BoxSizer(wx.HORIZONTAL)
+        git_label = wx.StaticText(panel, label="&Git repositories path:")
+        git_row.Add(git_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.git_path = wx.TextCtrl(panel, size=(280, -1))
+        self.git_path.SetToolTip("Folder where repositories will be cloned")
+        git_row.Add(self.git_path, 1, wx.RIGHT, 5)
+        self.git_browse_btn = wx.Button(panel, label="Br&owse...")
+        git_row.Add(self.git_browse_btn, 0)
+        git_sizer.Add(git_row, 0, wx.ALL | wx.EXPAND, 10)
+
+        self.git_org_structure_cb = wx.CheckBox(panel, label="Clone into &owner/repo folder structure")
+        self.git_org_structure_cb.SetToolTip(
+            "When enabled, repositories are cloned to owner/repo\n"
+            "(e.g., masonasons/FastGH instead of just FastGH)"
+        )
+        git_sizer.Add(self.git_org_structure_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        self.git_recursive_cb = wx.CheckBox(panel, label="Clone rec&ursively (include submodules)")
+        self.git_recursive_cb.SetToolTip(
+            "When enabled, git clone will use --recursive to also clone submodules"
+        )
+        git_sizer.Add(self.git_recursive_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        self.git_lfs_cb = wx.CheckBox(panel, label="Enable Git &LFS support for clone/pull/sync")
+        self.git_lfs_cb.SetToolTip(
+            "Runs git lfs install/pull after clone/pull and during scheduled sync.\n"
+            "If git-lfs is not installed, operations continue with a warning."
+        )
+        git_sizer.Add(self.git_lfs_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        main_sizer.Add(git_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Repository sync section
+        sync_box = wx.StaticBox(panel, label="Repository Sync")
+        sync_sizer = wx.StaticBoxSizer(sync_box, wx.VERTICAL)
+
+        self.repo_sync_enabled_cb = wx.CheckBox(
+            panel, label="Enable scheduled auto sync for configured repositories"
+        )
+        sync_sizer.Add(self.repo_sync_enabled_cb, 0, wx.LEFT | wx.TOP, 10)
+
+        interval_row = wx.BoxSizer(wx.HORIZONTAL)
+        interval_label = wx.StaticText(panel, label="Sync interval:")
+        interval_row.Add(interval_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.repo_sync_interval_spin = wx.SpinCtrl(panel, min=0, max=240, initial=0, style=wx.SP_ARROW_KEYS)
+        self.repo_sync_interval_spin.SetToolTip("Minutes between sync runs (0 = disabled)")
+        interval_row.Add(self.repo_sync_interval_spin, 0, wx.RIGHT, 5)
+        interval_hint = wx.StaticText(panel, label="minutes (0 = disabled)")
+        interval_row.Add(interval_hint, 0, wx.ALIGN_CENTER_VERTICAL)
+        sync_sizer.Add(interval_row, 0, wx.ALL, 10)
+
+        self.repo_sync_use_tools_cb = wx.CheckBox(
+            panel, label="Use .GITHUB repo bootstrap updater before git sync"
+        )
+        sync_sizer.Add(self.repo_sync_use_tools_cb, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        tools_row = wx.BoxSizer(wx.HORIZONTAL)
+        tools_label = wx.StaticText(panel, label=".GITHUB tools path:")
+        tools_row.Add(tools_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.repo_sync_tools_path = wx.TextCtrl(panel, size=(300, -1))
+        tools_row.Add(self.repo_sync_tools_path, 1, wx.RIGHT, 5)
+        self.repo_sync_tools_browse_btn = wx.Button(panel, label="Brow&se...")
+        tools_row.Add(self.repo_sync_tools_browse_btn, 0)
+        sync_sizer.Add(tools_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 10)
+
+        main_sizer.Add(sync_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Notifications section
+        notif_box = wx.StaticBox(panel, label="Desktop Notifications")
+        notif_sizer = wx.StaticBoxSizer(notif_box, wx.VERTICAL)
+
+        self.notify_activity_cb = wx.CheckBox(panel, label="Notify on new &activity feed items")
+        notif_sizer.Add(self.notify_activity_cb, 0, wx.LEFT | wx.TOP, 10)
+
+        self.notify_notifications_cb = wx.CheckBox(panel, label="Notify on new GitHub &notifications")
+        notif_sizer.Add(self.notify_notifications_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        self.notify_starred_cb = wx.CheckBox(panel, label="Notify on &starred repository updates")
+        notif_sizer.Add(self.notify_starred_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        self.notify_watched_cb = wx.CheckBox(panel, label="Notify on &watched repository updates")
+        notif_sizer.Add(self.notify_watched_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        self.notify_repo_sync_cb = wx.CheckBox(panel, label="Notify on repository &sync results")
+        notif_sizer.Add(self.notify_repo_sync_cb, 0, wx.LEFT | wx.TOP, 5)
+
+        refresh_row = wx.BoxSizer(wx.HORIZONTAL)
+        refresh_label = wx.StaticText(panel, label="Auto-&refresh interval:")
+        refresh_row.Add(refresh_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.refresh_spin = wx.SpinCtrl(panel, min=0, max=60, initial=0, style=wx.SP_ARROW_KEYS)
+        self.refresh_spin.SetToolTip("How often to check for updates (0 = disabled)")
+        refresh_row.Add(self.refresh_spin, 0, wx.RIGHT, 5)
+        refresh_hint = wx.StaticText(panel, label="minutes (0 = disabled)")
+        refresh_row.Add(refresh_hint, 0, wx.ALIGN_CENTER_VERTICAL)
+        notif_sizer.Add(refresh_row, 0, wx.ALL, 10)
+
+        main_sizer.Add(notif_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Hotkey section (only show if supported)
+        if HOTKEY_SUPPORTED:
+            hotkey_box = wx.StaticBox(panel, label="Global Hotkey")
+            hotkey_sizer = wx.StaticBoxSizer(hotkey_box, wx.VERTICAL)
+
+            hotkey_row = wx.BoxSizer(wx.HORIZONTAL)
+            hotkey_label = wx.StaticText(panel, label="Show/&Hide window:")
+            hotkey_row.Add(hotkey_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+            self.hotkey_text = wx.TextCtrl(panel, size=(200, -1))
+            self.hotkey_text.SetToolTip(
+                "Global hotkey to show/hide window.\n"
+                "Format: modifier+modifier+key\n"
+                "Modifiers: control, alt, shift, win\n"
+                "Example: control+alt+g"
+            )
+            hotkey_row.Add(self.hotkey_text, 1, wx.RIGHT, 5)
+            self.clear_hotkey_btn = wx.Button(panel, label="C&lear")
+            hotkey_row.Add(self.clear_hotkey_btn, 0)
+            hotkey_sizer.Add(hotkey_row, 0, wx.ALL | wx.EXPAND, 10)
+
+            hint_label = wx.StaticText(
+                panel,
+                label="Format: control+alt+g, win+shift+h, etc. Leave empty to disable."
+            )
+            hotkey_sizer.Add(hint_label, 0, wx.LEFT | wx.BOTTOM, 10)
+
+            main_sizer.Add(hotkey_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Appearance section
+        appearance_box = wx.StaticBox(panel, label="Appearance")
+        appearance_sizer = wx.StaticBoxSizer(appearance_box, wx.VERTICAL)
+
+        dark_mode_row = wx.BoxSizer(wx.HORIZONTAL)
+        dark_mode_label = wx.StaticText(panel, label="&Dark mode:")
+        dark_mode_row.Add(dark_mode_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.dark_mode_choice = wx.Choice(panel, choices=["Off", "Auto (follow system)", "On"])
+        self.dark_mode_choice.SetToolTip(
+            "Off: Always use light theme\n"
+            "Auto: Follow system theme setting\n"
+            "On: Always use dark theme"
+        )
+        dark_mode_row.Add(self.dark_mode_choice, 0)
+        appearance_sizer.Add(dark_mode_row, 0, wx.ALL, 10)
+
+        main_sizer.Add(appearance_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Updates section
+        updates_box = wx.StaticBox(panel, label="Updates")
+        updates_sizer = wx.StaticBoxSizer(updates_box, wx.VERTICAL)
+        self.check_for_updates_cb = wx.CheckBox(panel, label="Check for &updates on startup")
+        updates_sizer.Add(self.check_for_updates_cb, 0, wx.ALL, 10)
+        main_sizer.Add(updates_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        main_sizer.AddStretchSpacer()
+        panel.SetSizer(main_sizer)
+
+    def _build_filters_tab(self, panel):
+        """Build the Feed Filters tab content."""
+        from models.feed_filter import FILTER_GROUPS
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        intro = wx.StaticText(
+            panel,
+            label=(
+                "Choose which event types appear in your activity feed.\n"
+                "Changes apply per account and take effect immediately on Apply."
+            )
+        )
+        intro.Wrap(520)
+        main_sizer.Add(intro, 0, wx.ALL, 10)
+
+        self.filter_checkboxes: dict = {}
+
+        for group_label, event_types in FILTER_GROUPS:
+            group_box = wx.StaticBox(panel, label=group_label)
+            group_sizer = wx.StaticBoxSizer(group_box, wx.VERTICAL)
+
+            for et in event_types:
+                label = EVENT_DISPLAY_NAMES.get(et, et)
+                cb = wx.CheckBox(panel, label=label)
+                self.filter_checkboxes[et] = cb
+                group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 8)
+
+            group_sizer.AddSpacer(6)
+            main_sizer.Add(group_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Select All / Deselect All buttons
+        bulk_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.select_all_btn = wx.Button(panel, label="Select &All")
+        bulk_sizer.Add(self.select_all_btn, 0, wx.RIGHT, 8)
+        self.deselect_all_btn = wx.Button(panel, label="&Deselect All")
+        bulk_sizer.Add(self.deselect_all_btn, 0)
+        main_sizer.Add(bulk_sizer, 0, wx.LEFT | wx.BOTTOM, 10)
+
+        panel.SetSizer(main_sizer)
 
     def bind_events(self):
         """Bind event handlers."""
@@ -322,10 +336,17 @@ class OptionsDialog(wx.Dialog):
         if HOTKEY_SUPPORTED:
             self.clear_hotkey_btn.Bind(wx.EVT_BUTTON, self.on_clear_hotkey)
 
+        self.select_all_btn.Bind(wx.EVT_BUTTON, self.on_select_all_filters)
+        self.deselect_all_btn.Bind(wx.EVT_BUTTON, self.on_deselect_all_filters)
+
     def on_char_hook(self, event):
         """Handle key events."""
-        if event.GetKeyCode() == wx.WXK_ESCAPE:
+        key = event.GetKeyCode()
+        if key == wx.WXK_ESCAPE:
             self.on_close(None)
+        elif key in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
+            if self.save_settings():
+                self.EndModal(wx.ID_OK)
         else:
             event.Skip()
 
@@ -366,6 +387,16 @@ class OptionsDialog(wx.Dialog):
 
         # Updates setting
         self.check_for_updates_cb.SetValue(self.app.prefs.check_for_updates)
+
+        # Feed filter settings (per account)
+        if self.app.currentAccount:
+            from models.feed_filter import load_visible_types
+            visible = load_visible_types(self.app.currentAccount.prefs)
+            for event_type, cb in self.filter_checkboxes.items():
+                cb.SetValue(True if visible is None else event_type in visible)
+        else:
+            for cb in self.filter_checkboxes.values():
+                cb.SetValue(True)
 
     def save_settings(self):
         """Save settings from the dialog."""
@@ -451,6 +482,15 @@ class OptionsDialog(wx.Dialog):
         # Save updates setting
         self.app.prefs.check_for_updates = self.check_for_updates_cb.GetValue()
 
+        # Save feed filter settings (per account)
+        if self.app.currentAccount:
+            from models.feed_filter import save_visible_types
+            visible = {et for et, cb in self.filter_checkboxes.items() if cb.GetValue()}
+            save_visible_types(self.app.currentAccount.prefs, visible)
+            from GUI import main as _main
+            if _main.window:
+                _main.window._render_feed_list()
+
         return True
 
     def on_browse(self, event):
@@ -511,6 +551,16 @@ class OptionsDialog(wx.Dialog):
         """Clear the hotkey field."""
         self.hotkey_text.SetValue("")
 
+    def on_select_all_filters(self, event):
+        """Check all feed filter checkboxes."""
+        for cb in self.filter_checkboxes.values():
+            cb.SetValue(True)
+
+    def on_deselect_all_filters(self, event):
+        """Uncheck all feed filter checkboxes."""
+        for cb in self.filter_checkboxes.values():
+            cb.SetValue(False)
+
     def on_ok(self, event):
         """Handle OK button."""
         if self.save_settings():
@@ -522,8 +572,7 @@ class OptionsDialog(wx.Dialog):
 
     def on_apply(self, event):
         """Handle Apply button."""
-        if self.save_settings():
-            wx.MessageBox("Settings applied.", "Options", wx.OK | wx.ICON_INFORMATION)
+        self.save_settings()
 
     def on_close(self, event):
         """Handle close."""

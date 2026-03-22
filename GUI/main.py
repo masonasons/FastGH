@@ -114,6 +114,7 @@ class MainGui(wx.Frame):
 
         # Data caches
         self.feed = []
+        self._visible_feed = []
         self.repos = []
         self.starred = []
         self.watched = []
@@ -387,8 +388,9 @@ class MainGui(wx.Frame):
     def get_selected_feed_event(self):
         """Get the currently selected feed event."""
         selection = self.feed_list.GetSelection()
-        if selection != wx.NOT_FOUND and selection < len(self.feed):
-            return self.feed[selection]
+        visible = getattr(self, '_visible_feed', self.feed)
+        if selection != wx.NOT_FOUND and selection < len(visible):
+            return visible[selection]
         return None
 
     def on_feed_list_key_hook(self, event):
@@ -925,9 +927,13 @@ class MainGui(wx.Frame):
 
     def _render_feed_list(self):
         """Render feed list from current event data while preserving selection."""
+        from models.feed_filter import load_visible_types, filter_feed
+        visible = load_visible_types(self.app.currentAccount.prefs) if self.app.currentAccount else None
+        self._visible_feed = filter_feed(self.feed, visible)
+
         selection = self.feed_list.GetSelection()
         self.feed_list.Clear()
-        for event in self.feed:
+        for event in self._visible_feed:
             self.feed_list.Append(event.format_display())
         if selection != wx.NOT_FOUND and selection < self.feed_list.GetCount():
             self.feed_list.SetSelection(selection)
