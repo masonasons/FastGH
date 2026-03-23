@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from models.workflow import Workflow, WorkflowRun
+from models.workflow import Workflow, WorkflowJob, WorkflowRun
 
 
 # ---------------------------------------------------------------------------
@@ -349,3 +349,205 @@ def test_run_relative_time_old_returns_date():
 def test_run_relative_time_no_created_at():
     r = WorkflowRun.from_github_api(_run_data(created_at=None))
     assert r._format_relative_time() == ""
+
+
+# ---------------------------------------------------------------------------
+# WorkflowRun invalid datetime paths
+# ---------------------------------------------------------------------------
+
+
+def test_run_invalid_created_at_gives_none():
+    r = WorkflowRun.from_github_api(_run_data(created_at="bad"))
+    assert r.created_at is None
+
+
+def test_run_invalid_updated_at_gives_none():
+    r = WorkflowRun.from_github_api(_run_data(updated_at="bad"))
+    assert r.updated_at is None
+
+
+def test_run_invalid_run_started_at_gives_none():
+    r = WorkflowRun.from_github_api(_run_data(run_started_at="bad"))
+    assert r.run_started_at is None
+
+
+# ---------------------------------------------------------------------------
+# Workflow invalid datetime paths
+# ---------------------------------------------------------------------------
+
+
+def test_workflow_invalid_updated_at_gives_none():
+    w = Workflow.from_github_api(_workflow_data(updated_at="bad"))
+    assert w.updated_at is None
+
+
+# ---------------------------------------------------------------------------
+# WorkflowJob.from_github_api
+# ---------------------------------------------------------------------------
+
+
+def _job_data(**overrides) -> dict:
+    base = {
+        "id": 1,
+        "run_id": 100,
+        "name": "build",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-03-01T10:00:00Z",
+        "completed_at": "2026-03-01T10:05:00Z",
+        "html_url": "https://github.com/owner/repo/actions/runs/100/jobs/1",
+        "runner_name": "ubuntu-latest",
+        "steps": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_job_from_api_id():
+    j = WorkflowJob.from_github_api(_job_data(id=42))
+    assert j.id == 42
+
+
+def test_job_from_api_name():
+    j = WorkflowJob.from_github_api(_job_data(name="test"))
+    assert j.name == "test"
+
+
+def test_job_from_api_status():
+    j = WorkflowJob.from_github_api(_job_data(status="in_progress"))
+    assert j.status == "in_progress"
+
+
+def test_job_from_api_conclusion():
+    j = WorkflowJob.from_github_api(_job_data(conclusion="failure"))
+    assert j.conclusion == "failure"
+
+
+def test_job_from_api_started_at_parsed():
+    j = WorkflowJob.from_github_api(_job_data(started_at="2026-03-01T10:00:00Z"))
+    assert j.started_at is not None
+    assert j.started_at.year == 2026
+
+
+def test_job_from_api_completed_at_parsed():
+    j = WorkflowJob.from_github_api(_job_data(completed_at="2026-03-01T10:05:00Z"))
+    assert j.completed_at is not None
+
+
+def test_job_from_api_invalid_started_at_gives_none():
+    j = WorkflowJob.from_github_api(_job_data(started_at="bad"))
+    assert j.started_at is None
+
+
+def test_job_from_api_invalid_completed_at_gives_none():
+    j = WorkflowJob.from_github_api(_job_data(completed_at="bad"))
+    assert j.completed_at is None
+
+
+def test_job_from_api_runner_name():
+    j = WorkflowJob.from_github_api(_job_data(runner_name="ubuntu-22.04"))
+    assert j.runner_name == "ubuntu-22.04"
+
+
+def test_job_from_api_steps():
+    steps = [{"name": "Checkout", "status": "completed", "conclusion": "success"}]
+    j = WorkflowJob.from_github_api(_job_data(steps=steps))
+    assert j.steps == steps
+
+
+def test_job_from_api_missing_fields_use_defaults():
+    j = WorkflowJob.from_github_api({})
+    assert j.id == 0
+    assert j.name == ""
+    assert j.status == ""
+    assert j.conclusion is None
+    assert j.started_at is None
+    assert j.completed_at is None
+    assert j.steps == []
+
+
+# ---------------------------------------------------------------------------
+# WorkflowJob.get_status_icon
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("status,conclusion,expected", [
+    ("completed", "success", "✓"),
+    ("completed", "failure", "✗"),
+    ("completed", "cancelled", "⊘"),
+    ("completed", "skipped", "⊘"),
+    ("completed", "neutral", "?"),
+    ("completed", None, "?"),
+    ("in_progress", None, "●"),
+    ("queued", None, "○"),
+    ("waiting", None, "?"),
+])
+def test_job_get_status_icon(status, conclusion, expected):
+    j = WorkflowJob.from_github_api(_job_data(status=status, conclusion=conclusion))
+    assert j.get_status_icon() == expected
+
+
+# ---------------------------------------------------------------------------
+# WorkflowJob.get_duration
+# ---------------------------------------------------------------------------
+
+
+def _job_with_times(started_offset: int, duration_secs: int) -> WorkflowJob:
+    """Create a job started `started_offset` seconds ago with given duration."""
+    started = datetime.now(timezone.utc) - timedelta(seconds=started_offset + duration_secs)
+    completed = started + timedelta(seconds=duration_secs)
+    return WorkflowJob.from_github_api(_job_data(
+        started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        completed_at=completed.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    ))
+
+
+def test_job_duration_seconds():
+    j = _job_with_times(60, 45)
+    assert j.get_duration() == "45s"
+
+
+def test_job_duration_minutes_and_seconds():
+    j = _job_with_times(60, 125)  # 2m 5s
+    assert j.get_duration() == "2m 5s"
+
+
+def test_job_duration_hours_and_minutes():
+    j = _job_with_times(60, 3900)  # 1h 5m
+    assert j.get_duration() == "1h 5m"
+
+
+def test_job_duration_no_started_at_returns_empty():
+    j = WorkflowJob.from_github_api(_job_data(started_at=None, completed_at=None))
+    assert j.get_duration() == ""
+
+
+def test_job_duration_no_completed_at_uses_now():
+    # Job still running — started 30s ago, no completed_at
+    started = datetime.now(timezone.utc) - timedelta(seconds=30)
+    j = WorkflowJob.from_github_api(_job_data(
+        started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        completed_at=None,
+    ))
+    result = j.get_duration()
+    assert result.endswith("s") or "m" in result  # some positive duration
+
+
+# ---------------------------------------------------------------------------
+# WorkflowJob.format_display
+# ---------------------------------------------------------------------------
+
+
+def test_job_format_display_with_duration():
+    j = _job_with_times(60, 45)
+    display = j.format_display()
+    assert "build" in display
+    assert "45s" in display
+    assert display.startswith("✓")
+
+
+def test_job_format_display_no_duration():
+    j = WorkflowJob.from_github_api(_job_data(started_at=None, completed_at=None))
+    display = j.format_display()
+    assert "build" in display
+    assert "(" not in display
