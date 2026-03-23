@@ -283,6 +283,25 @@ def test_discussion_comment_deleted_without_title():
     assert e.get_action_description() == "deleted comment on discussion #3"
 
 
+def test_discussion_comment_created_no_title_no_reply():
+    e = _make("DiscussionCommentEvent", {
+        "action": "created",
+        "discussion": {"number": 4, "title": ""},
+        "comment": {},
+    })
+    assert e.get_action_description() == "commented on discussion #4"
+
+
+def test_discussion_comment_uses_reply_to_id_field():
+    # Some API payloads use reply_to_id instead of in_reply_to_id
+    e = _make("DiscussionCommentEvent", {
+        "action": "created",
+        "discussion": {"number": 5, "title": "Help"},
+        "comment": {"reply_to_id": 77},
+    })
+    assert e.get_action_description() == "replied in discussion #5: Help"
+
+
 # ---------------------------------------------------------------------------
 # get_action_description — IssuesEvent (branches not in metadata tests)
 # ---------------------------------------------------------------------------
@@ -353,6 +372,26 @@ def test_issues_event_generic_action():
 def test_issues_event_no_title():
     e = _make("IssuesEvent", {"action": "opened", "issue": {"number": 1, "title": ""}})
     assert e.get_action_description() == "opened issue #1"
+
+
+@pytest.mark.parametrize("action,extra,expected_fragment", [
+    ("labeled",     {"label": {"name": "bug"}},                  "labeled issue #1 [bug]"),
+    ("unlabeled",   {"label": {"name": "bug"}},                  "unlabeled issue #1 [bug]"),
+    ("assigned",    {"assignee": {"login": "dev"}},              "assigned dev to issue #1"),
+    ("unassigned",  {"assignee": {"login": "dev"}},              "unassigned dev from issue #1"),
+    ("milestoned",  {"milestone": {"title": "v1"}},              "milestoned issue #1 [v1]"),
+    ("demilestoned",{"milestone": {"title": "v1"}},              "demilestoned issue #1 [v1]"),
+    ("pinned",      {},                                           "pinned issue #1"),
+    ("unpinned",    {},                                           "unpinned issue #1"),
+    ("locked",      {},                                           "locked issue #1"),
+    ("unlocked",    {},                                           "unlocked issue #1"),
+    ("transferred", {},                                           "transferred issue #1"),
+])
+def test_issues_event_no_title_variants(action, extra, expected_fragment):
+    payload = {"action": action, "issue": {"number": 1, "title": ""}, **extra}
+    e = _make("IssuesEvent", payload)
+    result = e.get_action_description()
+    assert result == expected_fragment
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +587,42 @@ def test_pr_no_title():
     assert e.get_action_description() == "opened PR #1"
 
 
+@pytest.mark.parametrize("action,extra,expected_fragment", [
+    ("reopened",     {},                                           "reopened PR #1"),
+    ("closed",       {"pull_request": {"number": 1, "title": "", "merged": False}}, "closed PR #1"),
+    ("closed",       {"pull_request": {"number": 1, "title": "", "merged": True}},  "merged PR #1"),
+    ("labeled",      {"label": {"name": "bug"}},                  "labeled PR #1 [bug]"),
+    ("unlabeled",    {"label": {"name": "bug"}},                  "unlabeled PR #1 [bug]"),
+    ("assigned",     {"assignee": {"login": "dev"}},              "assigned dev to PR #1"),
+    ("unassigned",   {"assignee": {"login": "dev"}},              "unassigned dev from PR #1"),
+    ("milestoned",   {"milestone": {"title": "v1"}},              "milestoned PR #1 [v1]"),
+    ("demilestoned", {"milestone": {"title": "v1"}},              "demilestoned PR #1 [v1]"),
+    ("locked",       {},                                           "locked PR #1"),
+    ("unlocked",     {},                                           "unlocked PR #1"),
+    ("ready_for_review",    {},                                   "marked PR #1 ready for review"),
+    ("converted_to_draft",  {},                                   "converted PR #1 to draft"),
+    ("synchronize",         {},                                   "updated PR #1 with new commits"),
+    ("review_request_removed", {},                                "removed review request on PR #1"),
+    ("review_request_removed", {"requested_reviewer": {"login": "bob"}},
+                                                                  "removed review request for bob on PR #1"),
+    ("review_request_removed", {"requested_team": {"name": "eng"}},
+                                                                  "removed review request for team eng on PR #1"),
+    ("review_requested", {},                                      "requested review on PR #1"),
+    ("review_requested", {"requested_reviewer": {"login": "bob"}},
+                                                                  "requested review from bob on PR #1"),
+    ("review_requested", {"requested_team": {"name": "eng"}},
+                                                                  "requested review from team eng on PR #1"),
+])
+def test_pr_no_title_variants(action, extra, expected_fragment):
+    base_pr = {"number": 1, "title": ""}
+    payload = {"action": action, "pull_request": base_pr, **extra}
+    # For closed tests the pull_request key is in extra — merge properly
+    if "pull_request" in extra:
+        payload["pull_request"] = extra["pull_request"]
+    e = _make("PullRequestEvent", payload)
+    assert e.get_action_description() == expected_fragment
+
+
 # ---------------------------------------------------------------------------
 # get_action_description — PullRequestReviewEvent
 # ---------------------------------------------------------------------------
@@ -586,6 +661,22 @@ def test_pr_review_no_title():
         "review": {"state": "approved"},
     })
     assert e.get_action_description() == "approved PR #23"
+
+
+def test_pr_review_changes_requested_no_title():
+    e = _make("PullRequestReviewEvent", {
+        "pull_request": {"number": 24, "title": ""},
+        "review": {"state": "changes_requested"},
+    })
+    assert e.get_action_description() == "requested changes on PR #24"
+
+
+def test_pr_review_commented_no_title():
+    e = _make("PullRequestReviewEvent", {
+        "pull_request": {"number": 25, "title": ""},
+        "review": {"state": "commented"},
+    })
+    assert e.get_action_description() == "reviewed PR #25"
 
 
 # ---------------------------------------------------------------------------
