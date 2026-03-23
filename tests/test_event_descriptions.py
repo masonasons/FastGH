@@ -312,6 +312,15 @@ def test_issues_event_opened_with_title():
     assert e.get_action_description() == "opened issue #1: Bug"
 
 
+def test_issues_event_labeled_with_title():
+    e = _make("IssuesEvent", {
+        "action": "labeled",
+        "issue": {"number": 3, "title": "Bug report"},
+        "label": {"name": "priority"},
+    })
+    assert e.get_action_description() == "labeled issue #3 [priority]: Bug report"
+
+
 def test_issues_event_closed():
     e = _make("IssuesEvent", {"action": "closed", "issue": {"number": 2, "title": "Done"}})
     assert e.get_action_description() == "closed issue #2: Done"
@@ -429,6 +438,14 @@ def test_issue_comment_no_title():
         "issue": {"number": 4, "title": ""},
     })
     assert e.get_action_description() == "commented on issue #4"
+
+
+def test_issue_comment_deleted_no_title():
+    e = _make("IssueCommentEvent", {
+        "action": "deleted",
+        "issue": {"number": 5, "title": ""},
+    })
+    assert e.get_action_description() == "deleted comment on issue #5"
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +597,22 @@ def test_pr_generic_action():
         "pull_request": {"number": 18, "title": "Main"},
     })
     assert e.get_action_description() == "auto_merge_enabled PR #18: Main"
+
+
+def test_pr_generic_action_no_title():
+    e = _make("PullRequestEvent", {
+        "action": "auto_merge_enabled",
+        "pull_request": {"number": 19, "title": ""},
+    })
+    assert e.get_action_description() == "auto_merge_enabled PR #19"
+
+
+def test_pr_review_requested_with_title_no_reviewer():
+    e = _make("PullRequestEvent", {
+        "action": "review_requested",
+        "pull_request": {"number": 20, "title": "Big feature"},
+    })
+    assert e.get_action_description() == "requested review on PR #20: Big feature"
 
 
 def test_pr_no_title():
