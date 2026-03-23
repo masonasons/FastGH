@@ -197,14 +197,14 @@ class Application:
 
         return True
 
-    def question(self, title, text, parent=None, no_default=False):
+    def question(self, title, text, parent=None):
         """Show a yes/no question dialog.
 
-        no_default=True makes No the default button so Escape activates No.
+        Yes is the default button (Enter confirms). Escape returns No because
+        wx returns ID_CANCEL when there is no Cancel button, which is treated
+        as a non-Yes answer.
         """
         style = wx.YES_NO | wx.ICON_QUESTION
-        if no_default:
-            style |= wx.NO_DEFAULT
         dlg = wx.MessageDialog(parent, text, title, style)
         if platform.system() != "Darwin":
             dlg.Raise()
@@ -235,12 +235,12 @@ class Application:
         else:
             os.system(f"open {url}")
 
-    def question_from_thread(self, title, text, no_default=False):
+    def question_from_thread(self, title, text):
         """Show a question dialog from a background thread. Returns 1 for Yes, 2 for No."""
         result = [None]
         event = threading.Event()
         def show_dialog():
-            result[0] = self.question(title, text, no_default=no_default)
+            result[0] = self.question(title, text)
             event.set()
         wx.CallAfter(show_dialog)
         event.wait()
@@ -353,7 +353,7 @@ class Application:
                     message += f" (commit {release_commit[:8]})"
                 message += "\n\nDo you want to download and install the update?"
 
-                ud = self.question_from_thread("Update available: " + latest_version, message, no_default=True)
+                ud = self.question_from_thread("Update available: " + latest_version, message)
                 if ud == 1:
                     for asset in latest['assets']:
                         asset_name = asset['name'].lower()
