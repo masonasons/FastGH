@@ -769,6 +769,13 @@ class UserFilterDialog(wx.Dialog):
         name_row.Add(self.username_ctrl, 1)
         sizer.Add(name_row, 0, wx.ALL | wx.EXPAND, 10)
 
+        hint = wx.StaticText(
+            panel,
+            label="Check the event types you want to see from this user.\n"
+                  "Leave all unchecked to hide their events entirely."
+        )
+        sizer.Add(hint, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
         # Mute entirely shortcut
         self.mute_all_cb = wx.CheckBox(panel, label="&Mute this user entirely (hide all their events)")
         sizer.Add(self.mute_all_cb, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
@@ -798,9 +805,9 @@ class UserFilterDialog(wx.Dialog):
 
         # Initialise checkbox states
         if visible_types is None:
-            # New user — default all checked
+            # New user — default all unchecked; no types selected = hide all events
             for cb in self._type_checkboxes.values():
-                cb.SetValue(True)
+                cb.SetValue(False)
         elif len(visible_types) == 0:
             # Muted user
             self.mute_all_cb.SetValue(True)
