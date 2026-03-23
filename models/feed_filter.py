@@ -3,10 +3,15 @@
 All filter logic lives here as pure Python with no wx dependency so it
 can be tested without a display and reused from both GUI/main.py and
 GUI/options.py.
+
+NOTE: account_prefs is a Config object (MutableMapping) that wraps any
+stored dict value in another Config.  load_user_filters must therefore
+accept any Mapping, not just plain dict.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -180,7 +185,7 @@ def load_user_filters(account_prefs) -> Optional[dict]:
     if raw is None:
         return None
 
-    if not isinstance(raw, dict):
+    if not isinstance(raw, Mapping):
         return None
 
     result: dict = {}

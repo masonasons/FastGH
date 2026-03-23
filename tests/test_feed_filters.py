@@ -666,6 +666,25 @@ def test_load_user_filters_integer_top_level_returns_none():
     assert load_user_filters({USER_FILTERS_KEY: 42}) is None
 
 
+def test_load_user_filters_accepts_mapping_not_just_dict():
+    # Config wraps stored dicts as a MutableMapping subclass — must be accepted.
+    from collections.abc import MutableMapping
+
+    class FakeConfig(MutableMapping):
+        def __init__(self, data):
+            self._d = data
+        def __getitem__(self, k): return self._d[k]
+        def __setitem__(self, k, v): self._d[k] = v
+        def __delitem__(self, k): del self._d[k]
+        def __iter__(self): return iter(self._d)
+        def __len__(self): return len(self._d)
+
+    raw = FakeConfig({"alice": ["PushEvent"]})
+    prefs = {USER_FILTERS_KEY: raw}
+    result = load_user_filters(prefs)
+    assert result == {"alice": {"PushEvent"}}
+
+
 def test_load_user_filters_invalid_username_key_skipped():
     result = load_user_filters({USER_FILTERS_KEY: {42: ["PushEvent"], "alice": ["ForkEvent"]}})
     assert result == {"alice": {"ForkEvent"}}
