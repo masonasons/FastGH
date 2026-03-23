@@ -235,10 +235,14 @@ def filter_feed(
     """
     result = []
     for e in events:
-        if muted_repos and e.repo.name in muted_repos:
+        if muted_repos and e.repo.name.lower() in muted_repos:
             continue
-        if user_filters and e.actor.login in user_filters:
-            if e.type not in user_filters[e.actor.login]:
+        if user_filters:
+            login = e.actor.login.lower()
+            if login in user_filters:
+                if e.type not in user_filters[login]:
+                    continue
+            elif visible is not None and e.type not in visible:
                 continue
         elif visible is not None and e.type not in visible:
             continue

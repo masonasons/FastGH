@@ -818,6 +818,30 @@ def test_filter_feed_user_filters_empty_dict_uses_global():
     assert result == []
 
 
+def test_filter_feed_user_filter_matches_case_insensitive_actor():
+    # API may return actor login in any case; stored key is lowercase
+    events = [_make_event("PushEvent", actor="Alice")]
+    result = filter_feed(events, None, None, {"alice": set()})
+    assert result == []
+
+
+def test_filter_feed_user_filter_mixed_case_actor_types_respected():
+    events = [
+        _make_event("PushEvent", actor="Alice"),
+        _make_event("ForkEvent", actor="Alice"),
+    ]
+    result = filter_feed(events, None, None, {"alice": {"PushEvent"}})
+    assert len(result) == 1
+    assert result[0].type == "PushEvent"
+
+
+def test_filter_feed_muted_repo_matches_case_insensitive():
+    # Stored repo names are lowercased; API may return mixed case
+    events = [_make_event("PushEvent", repo="Owner/Repo")]
+    result = filter_feed(events, None, {"owner/repo"}, None)
+    assert result == []
+
+
 # ---------------------------------------------------------------------------
 # User filters roundtrips
 # ---------------------------------------------------------------------------
