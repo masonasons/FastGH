@@ -43,6 +43,48 @@ ALL_EVENT_TYPES: list[str] = [
     "WatchEvent",
 ]
 
+# Per event-type, the individual actions exposed for granular filtering.
+# Event types absent from this dict (or with empty list) are treated as
+# atomic — a single checkbox, no sub-actions.
+#
+# Action source per type:
+#   PullRequestEvent          payload["action"]  ("merged" is synthetic:
+#                               action=="closed" + pull_request.merged==True)
+#   IssuesEvent               payload["action"]
+#   IssueCommentEvent         payload["action"]
+#   PullRequestReviewEvent    payload["review"]["state"]   (not payload["action"])
+#   PullRequestReviewCommentEvent  payload["action"]
+#   PullRequestReviewThreadEvent   payload["action"]
+#   CreateEvent / DeleteEvent payload["ref_type"]
+#   ReleaseEvent              payload["action"]
+#   DiscussionEvent           payload["action"]
+#   DiscussionCommentEvent    payload["action"]
+#   MemberEvent               payload["action"]
+#   SponsorshipEvent          payload["action"]
+EVENT_TYPE_ACTIONS: dict = {
+    "PullRequestEvent": [
+        "opened", "closed", "merged", "reopened",
+        "labeled", "unlabeled", "assigned", "unassigned",
+        "locked", "unlocked",
+    ],
+    "IssuesEvent": [
+        "opened", "closed", "reopened",
+        "labeled", "unlabeled", "assigned", "unassigned",
+        "locked", "unlocked",
+    ],
+    "IssueCommentEvent": ["created", "edited", "deleted"],
+    "PullRequestReviewEvent": ["approved", "changes_requested", "commented"],
+    "PullRequestReviewCommentEvent": ["created", "edited", "deleted"],
+    "PullRequestReviewThreadEvent": ["resolved", "unresolved"],
+    "CreateEvent": ["branch", "tag", "repository"],
+    "DeleteEvent": ["branch", "tag"],
+    "ReleaseEvent": ["published", "created", "edited", "deleted", "prereleased"],
+    "DiscussionEvent": ["created", "answered", "category_changed", "labeled", "unlabeled"],
+    "DiscussionCommentEvent": ["created", "edited", "deleted"],
+    "MemberEvent": ["added", "removed"],
+    "SponsorshipEvent": ["created", "cancelled"],
+}
+
 # Ordered display groups used to build the UI checklist.
 # Note: wx StaticBox labels require "&&" to render a literal "&".
 FILTER_GROUPS: list[tuple[str, list[str]]] = [
@@ -205,16 +247,61 @@ def save_user_filters(account_prefs, user_filters: dict) -> None:
     }
 
 
+def _get_event_action(event) -> str:
+    """Extract the filterable action string for an event.
+
+    Returns an empty string for event types that have no sub-action filtering.
+    For PullRequestEvent a closed+merged PR is reported as "merged" (synthetic).
+    For CreateEvent/DeleteEvent the ref_type (branch/tag/repository) is used.
+    For PullRequestReviewEvent the review state is used instead of "submitted".
+    """
+    t = event.type
+    if t not in EVENT_TYPE_ACTIONS:
+        return ""
+    payload = event.payload or {}
+
+    if t == "PullRequestEvent":
+        action = payload.get("action", "")
+        if action == "closed":
+            pr = payload.get("pull_request") or {}
+            if pr.get("merged"):
+                return "merged"
+        return action
+
+    if t in ("CreateEvent", "DeleteEvent"):
+        return payload.get("ref_type", "")
+
+    if t == "PullRequestReviewEvent":
+        review = payload.get("review") or {}
+        return review.get("state", "")
+
+    return payload.get("action", "")
+
+
+def _is_event_in_visible(event, visible: set) -> bool:
+    """Return True if the event passes a visible-types filter set.
+
+    For event types with known sub-actions the key is "Type:action".
+    For types without sub-actions the key is the plain "Type" string.
+    """
+    t = event.type
+    if t in EVENT_TYPE_ACTIONS:
+        action = _get_event_action(event)
+        if action:
+            return f"{t}:{action}" in visible
+    return t in visible
+
+
 def is_event_visible(event, visible: Optional[set[str]]) -> bool:
     """Return True if *event* should appear in the feed.
 
-    event   — a models.event.Event instance (only .type is read)
+    event   — a models.event.Event instance
     visible — None means "unconfigured, show all"
-              a set means "show only these types"
+              a set means "show only these type(:action) keys"
     """
     if visible is None:
         return True
-    return event.type in visible
+    return _is_event_in_visible(event, visible)
 
 
 def filter_feed(
@@ -227,9 +314,13 @@ def filter_feed(
 
     Filters are applied in order:
       1. Muted repos (blacklist) — events from a muted repo are always hidden.
-      2. Per-user override — if the actor has a rule, that rule's type set is
-         used instead of the global visible set (empty set = mute that user).
+      2. Per-user override — if the actor has a rule, that rule's type/action
+         set is used instead of the global visible set (empty = mute user).
       3. Global visible types (whitelist) — applied to actors without a rule.
+
+    The visible set may contain plain "EventType" strings (backward compat) or
+    granular "EventType:action" strings (current format).  Both are handled by
+    _is_event_in_visible.
 
     Does not mutate the input iterable.
     """
@@ -237,14 +328,15 @@ def filter_feed(
     for e in events:
         if muted_repos and e.repo.name.lower() in muted_repos:
             continue
+
         if user_filters:
             login = e.actor.login.lower()
-            if login in user_filters:
-                if e.type not in user_filters[login]:
-                    continue
-            elif visible is not None and e.type not in visible:
-                continue
-        elif visible is not None and e.type not in visible:
+            vis = user_filters[login] if login in user_filters else visible
+        else:
+            vis = visible
+
+        if vis is not None and not _is_event_in_visible(e, vis):
             continue
+
         result.append(e)
     return result

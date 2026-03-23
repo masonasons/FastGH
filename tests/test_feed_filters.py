@@ -10,9 +10,12 @@ from models.event import Event
 from models.feed_filter import (
     ALL_EVENT_TYPES,
     CONFIG_KEY,
+    EVENT_TYPE_ACTIONS,
     FILTER_GROUPS,
     MUTED_REPOS_KEY,
     USER_FILTERS_KEY,
+    _get_event_action,
+    _is_event_in_visible,
     filter_feed,
     is_event_visible,
     load_muted_repos,
@@ -29,14 +32,19 @@ from models.feed_filter import (
 # ---------------------------------------------------------------------------
 
 
-def _make_event(event_type: str, repo: str = "owner/repo", actor: str = "alice") -> Event:
+def _make_event(
+    event_type: str,
+    repo: str = "owner/repo",
+    actor: str = "alice",
+    payload: dict | None = None,
+) -> Event:
     return Event.from_api(
         {
             "id": "1",
             "type": event_type,
             "actor": {"id": 1, "login": actor, "avatar_url": ""},
             "repo": {"id": 1, "name": repo, "url": ""},
-            "payload": {},
+            "payload": payload or {},
             "public": True,
             "created_at": None,
         }
@@ -895,3 +903,289 @@ def test_saving_user_filters_for_b_does_not_affect_a():
 
 def test_user_filters_key_value():
     assert USER_FILTERS_KEY == "feed_user_filters"
+
+
+# ---------------------------------------------------------------------------
+# EVENT_TYPE_ACTIONS constants integrity
+# ---------------------------------------------------------------------------
+
+
+def test_event_type_actions_keys_are_subsets_of_all_event_types():
+    for key in EVENT_TYPE_ACTIONS:
+        assert key in ALL_EVENT_TYPES, f"{key!r} not in ALL_EVENT_TYPES"
+
+
+def test_event_type_actions_has_no_empty_action_lists():
+    for key, actions in EVENT_TYPE_ACTIONS.items():
+        assert len(actions) > 0, f"{key!r} has empty action list"
+
+
+def test_event_type_actions_pr_includes_merged():
+    assert "merged" in EVENT_TYPE_ACTIONS["PullRequestEvent"]
+
+
+def test_event_type_actions_pr_review_states():
+    states = EVENT_TYPE_ACTIONS["PullRequestReviewEvent"]
+    assert "approved" in states
+    assert "changes_requested" in states
+    assert "commented" in states
+
+
+def test_event_type_actions_create_includes_ref_types():
+    actions = EVENT_TYPE_ACTIONS["CreateEvent"]
+    assert "branch" in actions
+    assert "tag" in actions
+    assert "repository" in actions
+
+
+def test_event_type_actions_delete_includes_ref_types():
+    actions = EVENT_TYPE_ACTIONS["DeleteEvent"]
+    assert "branch" in actions
+    assert "tag" in actions
+
+
+# ---------------------------------------------------------------------------
+# _get_event_action
+# ---------------------------------------------------------------------------
+
+
+def test_get_event_action_push_event_returns_empty():
+    # PushEvent has no sub-actions
+    e = _make_event("PushEvent")
+    assert _get_event_action(e) == ""
+
+
+def test_get_event_action_fork_event_returns_empty():
+    e = _make_event("ForkEvent")
+    assert _get_event_action(e) == ""
+
+
+def test_get_event_action_pr_opened():
+    e = _make_event("PullRequestEvent", payload={"action": "opened"})
+    assert _get_event_action(e) == "opened"
+
+
+def test_get_event_action_pr_closed_not_merged():
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": False}})
+    assert _get_event_action(e) == "closed"
+
+
+def test_get_event_action_pr_merged_synthetic():
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": True}})
+    assert _get_event_action(e) == "merged"
+
+
+def test_get_event_action_pr_merged_null_pr_field():
+    # pull_request key absent — should return "closed", not crash
+    e = _make_event("PullRequestEvent", payload={"action": "closed"})
+    assert _get_event_action(e) == "closed"
+
+
+def test_get_event_action_pr_reopened():
+    e = _make_event("PullRequestEvent", payload={"action": "reopened"})
+    assert _get_event_action(e) == "reopened"
+
+
+def test_get_event_action_issues_opened():
+    e = _make_event("IssuesEvent", payload={"action": "opened"})
+    assert _get_event_action(e) == "opened"
+
+
+def test_get_event_action_issue_comment_created():
+    e = _make_event("IssueCommentEvent", payload={"action": "created"})
+    assert _get_event_action(e) == "created"
+
+
+def test_get_event_action_create_branch():
+    e = _make_event("CreateEvent", payload={"ref_type": "branch"})
+    assert _get_event_action(e) == "branch"
+
+
+def test_get_event_action_create_tag():
+    e = _make_event("CreateEvent", payload={"ref_type": "tag"})
+    assert _get_event_action(e) == "tag"
+
+
+def test_get_event_action_create_repository():
+    e = _make_event("CreateEvent", payload={"ref_type": "repository"})
+    assert _get_event_action(e) == "repository"
+
+
+def test_get_event_action_delete_branch():
+    e = _make_event("DeleteEvent", payload={"ref_type": "branch"})
+    assert _get_event_action(e) == "branch"
+
+
+def test_get_event_action_pr_review_approved():
+    e = _make_event("PullRequestReviewEvent", payload={"review": {"state": "approved"}})
+    assert _get_event_action(e) == "approved"
+
+
+def test_get_event_action_pr_review_changes_requested():
+    e = _make_event("PullRequestReviewEvent", payload={"review": {"state": "changes_requested"}})
+    assert _get_event_action(e) == "changes_requested"
+
+
+def test_get_event_action_pr_review_submitted_action_ignored():
+    # PullRequestReviewEvent action is always "submitted" — we use review.state instead
+    e = _make_event("PullRequestReviewEvent", payload={"action": "submitted", "review": {"state": "approved"}})
+    assert _get_event_action(e) == "approved"
+
+
+def test_get_event_action_member_added():
+    e = _make_event("MemberEvent", payload={"action": "added"})
+    assert _get_event_action(e) == "added"
+
+
+def test_get_event_action_release_published():
+    e = _make_event("ReleaseEvent", payload={"action": "published"})
+    assert _get_event_action(e) == "published"
+
+
+def test_get_event_action_empty_payload_returns_empty_for_action_type():
+    # IssuesEvent with no payload — action is absent, returns ""
+    e = _make_event("IssuesEvent", payload={})
+    assert _get_event_action(e) == ""
+
+
+# ---------------------------------------------------------------------------
+# _is_event_in_visible — action-level
+# ---------------------------------------------------------------------------
+
+
+def test_is_event_in_visible_pr_opened_correct_key():
+    e = _make_event("PullRequestEvent", payload={"action": "opened"})
+    assert _is_event_in_visible(e, {"PullRequestEvent:opened"}) is True
+
+
+def test_is_event_in_visible_pr_opened_wrong_action():
+    e = _make_event("PullRequestEvent", payload={"action": "opened"})
+    assert _is_event_in_visible(e, {"PullRequestEvent:closed"}) is False
+
+
+def test_is_event_in_visible_pr_merged():
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": True}})
+    assert _is_event_in_visible(e, {"PullRequestEvent:merged"}) is True
+
+
+def test_is_event_in_visible_pr_merged_closed_key_does_not_match():
+    # merged PR must use "merged" key, not "closed"
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": True}})
+    assert _is_event_in_visible(e, {"PullRequestEvent:closed"}) is False
+
+
+def test_is_event_in_visible_pr_review_approved():
+    e = _make_event("PullRequestReviewEvent", payload={"review": {"state": "approved"}})
+    assert _is_event_in_visible(e, {"PullRequestReviewEvent:approved"}) is True
+
+
+def test_is_event_in_visible_create_branch():
+    e = _make_event("CreateEvent", payload={"ref_type": "branch"})
+    assert _is_event_in_visible(e, {"CreateEvent:branch"}) is True
+
+
+def test_is_event_in_visible_create_tag_does_not_match_branch():
+    e = _make_event("CreateEvent", payload={"ref_type": "tag"})
+    assert _is_event_in_visible(e, {"CreateEvent:branch"}) is False
+
+
+def test_is_event_in_visible_push_plain_type():
+    # PushEvent has no actions — checked by plain type key
+    e = _make_event("PushEvent")
+    assert _is_event_in_visible(e, {"PushEvent"}) is True
+
+
+def test_is_event_in_visible_push_not_in_visible():
+    e = _make_event("PushEvent")
+    assert _is_event_in_visible(e, {"ForkEvent"}) is False
+
+
+def test_is_event_in_visible_action_type_empty_payload_fallback():
+    # Action type with empty payload → action is "" → falls through to plain type check
+    e = _make_event("IssuesEvent", payload={})
+    assert _is_event_in_visible(e, {"IssuesEvent"}) is True
+
+
+# ---------------------------------------------------------------------------
+# filter_feed — action-level filtering
+# ---------------------------------------------------------------------------
+
+
+def test_filter_feed_action_level_pr_opened_visible():
+    e = _make_event("PullRequestEvent", payload={"action": "opened"})
+    result = filter_feed([e], {"PullRequestEvent:opened"})
+    assert len(result) == 1
+
+
+def test_filter_feed_action_level_pr_closed_hidden():
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": False}})
+    result = filter_feed([e], {"PullRequestEvent:opened"})
+    assert result == []
+
+
+def test_filter_feed_action_level_pr_merged_visible():
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": True}})
+    result = filter_feed([e], {"PullRequestEvent:merged"})
+    assert len(result) == 1
+
+
+def test_filter_feed_action_level_pr_merged_not_in_closed_key():
+    # Visible set has "closed" but PR is actually merged — must be hidden
+    e = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": True}})
+    result = filter_feed([e], {"PullRequestEvent:closed"})
+    assert result == []
+
+
+def test_filter_feed_action_level_multiple_actions_some_visible():
+    opened = _make_event("PullRequestEvent", payload={"action": "opened"})
+    closed = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": False}})
+    merged = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": True}})
+    result = filter_feed([opened, closed, merged], {"PullRequestEvent:opened", "PullRequestEvent:merged"})
+    assert len(result) == 2
+    assert closed not in result
+
+
+def test_filter_feed_action_level_create_branch_only():
+    branch = _make_event("CreateEvent", payload={"ref_type": "branch"})
+    tag = _make_event("CreateEvent", payload={"ref_type": "tag"})
+    repo = _make_event("CreateEvent", payload={"ref_type": "repository"})
+    result = filter_feed([branch, tag, repo], {"CreateEvent:branch"})
+    assert len(result) == 1
+    assert result[0].payload["ref_type"] == "branch"
+
+
+def test_filter_feed_action_level_pr_review_approved_only():
+    approved = _make_event("PullRequestReviewEvent", payload={"review": {"state": "approved"}})
+    changes = _make_event("PullRequestReviewEvent", payload={"review": {"state": "changes_requested"}})
+    commented = _make_event("PullRequestReviewEvent", payload={"review": {"state": "commented"}})
+    result = filter_feed([approved, changes, commented], {"PullRequestReviewEvent:approved"})
+    assert len(result) == 1
+
+
+def test_filter_feed_action_and_plain_type_mixed_visible():
+    push = _make_event("PushEvent")
+    pr_opened = _make_event("PullRequestEvent", payload={"action": "opened"})
+    pr_closed = _make_event("PullRequestEvent", payload={"action": "closed", "pull_request": {"merged": False}})
+    visible = {"PushEvent", "PullRequestEvent:opened"}
+    result = filter_feed([push, pr_opened, pr_closed], visible)
+    assert len(result) == 2
+    assert pr_closed not in result
+
+
+def test_filter_feed_action_level_user_filter_action_key():
+    # Per-user rule using action-level keys
+    pr_opened = _make_event("PullRequestEvent", actor="alice", payload={"action": "opened"})
+    pr_closed = _make_event("PullRequestEvent", actor="alice", payload={"action": "closed", "pull_request": {"merged": False}})
+    result = filter_feed([pr_opened, pr_closed], None, None, {"alice": {"PullRequestEvent:opened"}})
+    assert len(result) == 1
+    assert result[0] is pr_opened
+
+
+def test_filter_feed_action_level_issues_multiple_actions():
+    opened = _make_event("IssuesEvent", payload={"action": "opened"})
+    closed = _make_event("IssuesEvent", payload={"action": "closed"})
+    labeled = _make_event("IssuesEvent", payload={"action": "labeled"})
+    visible = {"IssuesEvent:opened", "IssuesEvent:closed"}
+    result = filter_feed([opened, closed, labeled], visible)
+    assert len(result) == 2
+    assert labeled not in result

@@ -17,26 +17,62 @@ else:
     HOTKEY_SUPPORTED = False
 
 
+# Display names for event types used as section headers (types with sub-actions)
+# or as single checkbox labels (types without sub-actions).
 EVENT_DISPLAY_NAMES = {
-    "PullRequestEvent":              "&Pull Request opened/closed/merged",
-    "PullRequestReviewEvent":        "Pull Request &Review submitted",
-    "PullRequestReviewCommentEvent": "Pull Request Review &Comment",
-    "PullRequestReviewThreadEvent":  "Pull Request Review &Thread",
-    "IssuesEvent":                   "&Issue opened/closed/labeled",
-    "IssueCommentEvent":             "Issue C&omment",
+    # Types WITH sub-actions — rendered as a static-text section header
+    "PullRequestEvent":              "Pull Requests",
+    "PullRequestReviewEvent":        "Pull Request Reviews",
+    "PullRequestReviewCommentEvent": "Pull Request Review Comments",
+    "PullRequestReviewThreadEvent":  "Pull Request Review Threads",
+    "IssuesEvent":                   "Issues",
+    "IssueCommentEvent":             "Issue Comments",
+    "CreateEvent":                   "Create",
+    "DeleteEvent":                   "Delete",
+    "ReleaseEvent":                  "Releases",
+    "DiscussionEvent":               "Discussions",
+    "DiscussionCommentEvent":        "Discussion Comments",
+    "MemberEvent":                   "Member",
+    "SponsorshipEvent":              "Sponsorship",
+    # Types WITHOUT sub-actions — single checkbox
     "PushEvent":                     "P&ush (commits)",
     "CommitCommentEvent":            "Commit Comm&ent",
-    "CreateEvent":                   "C&reate branch/tag/repo",
-    "DeleteEvent":                   "&Delete branch/tag",
     "ForkEvent":                     "&Fork",
     "WatchEvent":                    "&Star (watch event)",
-    "MemberEvent":                   "&Member added as collaborator",
     "GollumEvent":                   "&Wiki page updated",
-    "ReleaseEvent":                  "&Release published",
-    "DiscussionEvent":               "&Discussion created/answered",
-    "DiscussionCommentEvent":        "Discussion Co&mment",
-    "SponsorshipEvent":              "Spon&sorship",
     "PublicEvent":                   "Repo made P&ublic",
+}
+
+# Display names for individual actions within a type.
+ACTION_DISPLAY_NAMES = {
+    "opened":            "Opened",
+    "closed":            "Closed",
+    "merged":            "Merged",
+    "reopened":          "Reopened",
+    "labeled":           "Labeled",
+    "unlabeled":         "Unlabeled",
+    "assigned":          "Assigned",
+    "unassigned":        "Unassigned",
+    "locked":            "Locked",
+    "unlocked":          "Unlocked",
+    "approved":          "Approved",
+    "changes_requested": "Changes requested",
+    "commented":         "Commented",
+    "created":           "Created",
+    "edited":            "Edited",
+    "deleted":           "Deleted",
+    "resolved":          "Resolved",
+    "unresolved":        "Unresolved",
+    "published":         "Published",
+    "prereleased":       "Pre-released",
+    "branch":            "Branch",
+    "tag":               "Tag",
+    "repository":        "Repository",
+    "added":             "Added",
+    "removed":           "Removed",
+    "answered":          "Answered",
+    "category_changed":  "Category changed",
+    "cancelled":         "Cancelled",
 }
 
 
@@ -284,13 +320,13 @@ class OptionsDialog(wx.Dialog):
 
     def _build_filters_tab(self, panel):
         """Build the Feed Filters tab content."""
-        from models.feed_filter import FILTER_GROUPS
+        from models.feed_filter import FILTER_GROUPS, EVENT_TYPE_ACTIONS
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         intro = wx.StaticText(
             panel,
             label=(
-                "Choose which event types appear in your activity feed.\n"
+                "Choose which event types and actions appear in your activity feed.\n"
                 "Changes apply per account and take effect immediately on Apply."
             )
         )
@@ -304,10 +340,22 @@ class OptionsDialog(wx.Dialog):
             group_sizer = wx.StaticBoxSizer(group_box, wx.VERTICAL)
 
             for et in event_types:
-                label = EVENT_DISPLAY_NAMES.get(et, et)
-                cb = wx.CheckBox(panel, label=label)
-                self.filter_checkboxes[et] = cb
-                group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 8)
+                actions = EVENT_TYPE_ACTIONS.get(et)
+                if actions:
+                    # Show type as a bold section header, actions as indented checkboxes
+                    type_label = wx.StaticText(panel, label=EVENT_DISPLAY_NAMES.get(et, et) + ":")
+                    group_sizer.Add(type_label, 0, wx.LEFT | wx.TOP, 8)
+                    for action in actions:
+                        action_label = ACTION_DISPLAY_NAMES.get(action, action)
+                        cb = wx.CheckBox(panel, label=action_label)
+                        self.filter_checkboxes[f"{et}:{action}"] = cb
+                        group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 4)
+                    group_sizer.AddSpacer(4)
+                else:
+                    label = EVENT_DISPLAY_NAMES.get(et, et)
+                    cb = wx.CheckBox(panel, label=label)
+                    self.filter_checkboxes[et] = cb
+                    group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 8)
 
             group_sizer.AddSpacer(6)
             main_sizer.Add(group_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
@@ -460,8 +508,8 @@ class OptionsDialog(wx.Dialog):
         if self.app.currentAccount:
             from models.feed_filter import load_visible_types, load_muted_repos, load_user_filters
             visible = load_visible_types(self.app.currentAccount.prefs)
-            for event_type, cb in self.filter_checkboxes.items():
-                cb.SetValue(True if visible is None else event_type in visible)
+            for key, cb in self.filter_checkboxes.items():
+                cb.SetValue(True if visible is None else key in visible)
             muted = load_muted_repos(self.app.currentAccount.prefs) or set()
             self.muted_repos_list.Set(sorted(muted))
             user_filters = load_user_filters(self.app.currentAccount.prefs) or {}
@@ -563,7 +611,7 @@ class OptionsDialog(wx.Dialog):
         # Save feed filter settings (per account)
         if self.app.currentAccount:
             from models.feed_filter import save_visible_types, save_muted_repos
-            visible = {et for et, cb in self.filter_checkboxes.items() if cb.GetValue()}
+            visible = {key for key, cb in self.filter_checkboxes.items() if cb.GetValue()}
             save_visible_types(self.app.currentAccount.prefs, visible)
             muted = {self.muted_repos_list.GetString(i) for i in range(self.muted_repos_list.GetCount())}
             save_muted_repos(self.app.currentAccount.prefs, muted)
@@ -750,14 +798,14 @@ class UserFilterDialog(wx.Dialog):
         visible_types — set of visible event types (None = all checked)
         """
         title = "Edit User Filter" if username else "Add User Filter"
-        super().__init__(parent, title=title, size=(480, 600))
+        super().__init__(parent, title=title, size=(500, 700))
 
         self._init_ui(username, visible_types)
         self._bind()
         self.Center()
 
     def _init_ui(self, username: str, visible_types):
-        from models.feed_filter import FILTER_GROUPS
+        from models.feed_filter import FILTER_GROUPS, EVENT_TYPE_ACTIONS
         panel = wx.Panel(self)
         sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -780,18 +828,36 @@ class UserFilterDialog(wx.Dialog):
         self.mute_all_cb = wx.CheckBox(panel, label="&Mute this user entirely (hide all their events)")
         sizer.Add(self.mute_all_cb, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
-        # Per-type checkboxes in groups
+        # Per-type/action checkboxes in groups (scrolled to handle the large count)
+        scroll = wx.ScrolledWindow(panel)
+        scroll.SetScrollRate(0, 20)
+        scroll_sizer = wx.BoxSizer(wx.VERTICAL)
+
         self._type_checkboxes: dict = {}
         for group_label, event_types in FILTER_GROUPS:
-            group_box = wx.StaticBox(panel, label=group_label)
+            group_box = wx.StaticBox(scroll, label=group_label)
             group_sizer = wx.StaticBoxSizer(group_box, wx.VERTICAL)
             for et in event_types:
-                label = EVENT_DISPLAY_NAMES.get(et, et)
-                cb = wx.CheckBox(panel, label=label)
-                self._type_checkboxes[et] = cb
-                group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 6)
+                actions = EVENT_TYPE_ACTIONS.get(et)
+                if actions:
+                    type_label = wx.StaticText(scroll, label=EVENT_DISPLAY_NAMES.get(et, et) + ":")
+                    group_sizer.Add(type_label, 0, wx.LEFT | wx.TOP, 6)
+                    for action in actions:
+                        action_label = ACTION_DISPLAY_NAMES.get(action, action)
+                        cb = wx.CheckBox(scroll, label=action_label)
+                        self._type_checkboxes[f"{et}:{action}"] = cb
+                        group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 3)
+                    group_sizer.AddSpacer(3)
+                else:
+                    label = EVENT_DISPLAY_NAMES.get(et, et)
+                    cb = wx.CheckBox(scroll, label=label)
+                    self._type_checkboxes[et] = cb
+                    group_sizer.Add(cb, 0, wx.LEFT | wx.TOP, 6)
             group_sizer.AddSpacer(4)
-            sizer.Add(group_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+            scroll_sizer.Add(group_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
+
+        scroll.SetSizer(scroll_sizer)
+        sizer.Add(scroll, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 4)
 
         # Buttons
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -805,7 +871,7 @@ class UserFilterDialog(wx.Dialog):
 
         # Initialise checkbox states
         if visible_types is None:
-            # New user — default all unchecked; no types selected = hide all events
+            # New user — default all unchecked (no selection = hide all events)
             for cb in self._type_checkboxes.values():
                 cb.SetValue(False)
         elif len(visible_types) == 0:
@@ -813,8 +879,8 @@ class UserFilterDialog(wx.Dialog):
             self.mute_all_cb.SetValue(True)
             self._set_type_checkboxes_enabled(False)
         else:
-            for et, cb in self._type_checkboxes.items():
-                cb.SetValue(et in visible_types)
+            for key, cb in self._type_checkboxes.items():
+                cb.SetValue(key in visible_types)
 
     def _bind(self):
         self.mute_all_cb.Bind(wx.EVT_CHECKBOX, self._on_mute_all_toggled)
@@ -851,4 +917,4 @@ class UserFilterDialog(wx.Dialog):
         username = self.username_ctrl.GetValue().strip().lower()
         if self.mute_all_cb.GetValue():
             return username, set()
-        return username, {et for et, cb in self._type_checkboxes.items() if cb.GetValue()}
+        return username, {key for key, cb in self._type_checkboxes.items() if cb.GetValue()}
