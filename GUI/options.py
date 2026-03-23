@@ -341,8 +341,10 @@ class OptionsDialog(wx.Dialog):
         self.user_filter_add_btn = wx.Button(panel, label="&Add User...")
         user_btn_row.Add(self.user_filter_add_btn, 0, wx.RIGHT, 4)
         self.user_filter_edit_btn = wx.Button(panel, label="&Edit...")
+        self.user_filter_edit_btn.Disable()
         user_btn_row.Add(self.user_filter_edit_btn, 0, wx.RIGHT, 4)
         self.user_filter_remove_btn = wx.Button(panel, label="Remo&ve")
+        self.user_filter_remove_btn.Disable()
         user_btn_row.Add(self.user_filter_remove_btn, 0)
         user_sizer.Add(user_btn_row, 0, wx.ALL, 8)
 
@@ -362,15 +364,19 @@ class OptionsDialog(wx.Dialog):
         self.muted_repos_list = wx.ListBox(panel, size=(-1, 100), style=wx.LB_SINGLE)
         mute_sizer.Add(self.muted_repos_list, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
+        add_label = wx.StaticText(panel, label="Add repository (owner/repo):")
+        mute_sizer.Add(add_label, 0, wx.LEFT | wx.TOP, 8)
+
         add_row = wx.BoxSizer(wx.HORIZONTAL)
         self.muted_repo_entry = wx.TextCtrl(panel, size=(280, -1), style=wx.TE_PROCESS_ENTER)
-        self.muted_repo_entry.SetHint("owner/repo")
+        self.muted_repo_entry.SetHint("e.g. torvalds/linux")
         add_row.Add(self.muted_repo_entry, 1, wx.RIGHT, 6)
         self.mute_add_btn = wx.Button(panel, label="&Add")
         add_row.Add(self.mute_add_btn, 0, wx.RIGHT, 4)
-        self.mute_remove_btn = wx.Button(panel, label="&Remove")
+        self.mute_remove_btn = wx.Button(panel, label="&Remove selected")
+        self.mute_remove_btn.Disable()
         add_row.Add(self.mute_remove_btn, 0)
-        mute_sizer.Add(add_row, 0, wx.EXPAND | wx.ALL, 8)
+        mute_sizer.Add(add_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         main_sizer.Add(mute_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
@@ -398,6 +404,8 @@ class OptionsDialog(wx.Dialog):
         self.user_filter_add_btn.Bind(wx.EVT_BUTTON, self.on_user_filter_add)
         self.user_filter_edit_btn.Bind(wx.EVT_BUTTON, self.on_user_filter_edit)
         self.user_filter_remove_btn.Bind(wx.EVT_BUTTON, self.on_user_filter_remove)
+        self.user_filters_list.Bind(wx.EVT_LISTBOX, self._on_user_filter_selection)
+        self.muted_repos_list.Bind(wx.EVT_LISTBOX, self._on_muted_repo_selection)
 
     def on_char_hook(self, event):
         """Handle key events."""
@@ -641,7 +649,7 @@ class OptionsDialog(wx.Dialog):
 
     def on_mute_add(self, event):
         """Add a repo to the muted list."""
-        repo = self.muted_repo_entry.GetValue().strip()
+        repo = self.muted_repo_entry.GetValue().strip().lower()
         if not repo:
             return
         # Basic format validation
@@ -662,6 +670,16 @@ class OptionsDialog(wx.Dialog):
         sel = self.muted_repos_list.GetSelection()
         if sel != wx.NOT_FOUND:
             self.muted_repos_list.Delete(sel)
+            self.mute_remove_btn.Disable()
+
+    def _on_user_filter_selection(self, event):
+        has_sel = self.user_filters_list.GetSelection() != wx.NOT_FOUND
+        self.user_filter_edit_btn.Enable(has_sel)
+        self.user_filter_remove_btn.Enable(has_sel)
+
+    def _on_muted_repo_selection(self, event):
+        has_sel = self.muted_repos_list.GetSelection() != wx.NOT_FOUND
+        self.mute_remove_btn.Enable(has_sel)
 
     # ---- User filter helpers ----
 
@@ -702,6 +720,8 @@ class OptionsDialog(wx.Dialog):
         sel = self.user_filters_list.GetSelection()
         if sel != wx.NOT_FOUND:
             self.user_filters_list.Delete(sel)
+            self.user_filter_edit_btn.Disable()
+            self.user_filter_remove_btn.Disable()
 
     def on_ok(self, event):
         """Handle OK button."""
@@ -746,8 +766,6 @@ class UserFilterDialog(wx.Dialog):
         name_label = wx.StaticText(panel, label="GitHub &username:")
         name_row.Add(name_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         self.username_ctrl = wx.TextCtrl(panel, value=username, size=(220, -1))
-        if username:
-            self.username_ctrl.SetEditable(False)
         name_row.Add(self.username_ctrl, 1)
         sizer.Add(name_row, 0, wx.ALL | wx.EXPAND, 10)
 
@@ -823,7 +841,7 @@ class UserFilterDialog(wx.Dialog):
 
     def get_result(self) -> tuple:
         """Return (username, set_of_visible_types). Empty set = muted."""
-        username = self.username_ctrl.GetValue().strip()
+        username = self.username_ctrl.GetValue().strip().lower()
         if self.mute_all_cb.GetValue():
             return username, set()
         return username, {et for et, cb in self._type_checkboxes.items() if cb.GetValue()}
