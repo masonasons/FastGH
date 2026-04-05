@@ -198,8 +198,14 @@ class Application:
         return True
 
     def question(self, title, text, parent=None):
-        """Show a yes/no question dialog."""
-        dlg = wx.MessageDialog(parent, text, title, wx.YES_NO | wx.ICON_QUESTION)
+        """Show a yes/no question dialog.
+
+        Yes is the default button (Enter confirms). Escape returns No because
+        wx returns ID_CANCEL when there is no Cancel button, which is treated
+        as a non-Yes answer.
+        """
+        style = wx.YES_NO | wx.ICON_QUESTION
+        dlg = wx.MessageDialog(parent, text, title, style)
         if platform.system() != "Darwin":
             dlg.Raise()
             dlg.RequestUserAttention()
