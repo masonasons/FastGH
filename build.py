@@ -77,6 +77,7 @@ def get_hidden_imports():
         "models.release",
         "models.notification",
         "models.event",
+        "models.feed_filter",
         "models.discussion",
         "GUI",
         "GUI.main",
@@ -185,7 +186,8 @@ def build_windows(script_dir: Path, output_dir: Path) -> tuple:
     for src, dst in get_binaries():
         cmd.extend(["--add-binary", f"{src}{os.pathsep}{dst}"])
 
-    # Collect keyboard_handler
+    # Collect wx and keyboard_handler fully (wx needs this or wx.App etc. fail at runtime)
+    cmd.extend(["--collect-all", "wx"])
     cmd.extend(["--collect-all", "keyboard_handler"])
 
     # Add main script
