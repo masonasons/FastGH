@@ -63,6 +63,7 @@ class Event:
         "PublicEvent": "made public",
         "PullRequestEvent": "pull request",
         "PullRequestReviewEvent": "reviewed PR",
+        "PullRequestReviewThreadEvent": "updated PR review thread",
         "PullRequestReviewCommentEvent": "commented on PR review",
         "PushEvent": "pushed",
         "ReleaseEvent": "released",
@@ -395,6 +396,18 @@ class Event:
                 return f"commented on PR #{number}: {title}"
             return f"commented on PR #{number}"
 
+        elif self.type == "PullRequestReviewThreadEvent":
+            action = payload.get("action", "")
+            pr = payload.get("pull_request", {})
+            number = pr.get("number", "")
+            title = pr.get("title", "")[:50]
+            title_suffix = f": {title}" if title else ""
+            if action == "resolved":
+                return f"resolved review thread on PR #{number}{title_suffix}"
+            elif action == "unresolved":
+                return f"unresolved review thread on PR #{number}{title_suffix}"
+            return f"{action} review thread on PR #{number}{title_suffix}"
+
         elif self.type == "ReleaseEvent":
             action = payload.get("action", "")
             release = payload.get("release", {})
@@ -486,7 +499,27 @@ class Event:
             if number:
                 return f"{base_url}/pull/{number}"
 
-        elif self.type == "PullRequestReviewEvent" or self.type == "PullRequestReviewCommentEvent":
+        elif self.type == "PullRequestReviewCommentEvent":
+            comment = self.payload.get("comment", {})
+            html_url = comment.get("html_url")
+            if html_url:
+                return html_url
+            pr = self.payload.get("pull_request", {})
+            number = pr.get("number")
+            if number:
+                return f"{base_url}/pull/{number}"
+
+        elif self.type == "PullRequestReviewThreadEvent":
+            thread = self.payload.get("thread", {})
+            html_url = thread.get("html_url")
+            if html_url:
+                return html_url
+            pr = self.payload.get("pull_request", {})
+            number = pr.get("number")
+            if number:
+                return f"{base_url}/pull/{number}"
+
+        elif self.type == "PullRequestReviewEvent":
             pr = self.payload.get("pull_request", {})
             number = pr.get("number")
             if number:

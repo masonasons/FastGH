@@ -447,7 +447,8 @@ class ViewPullRequestDialog(wx.Dialog):
             for comment in comments:
                 time_str = comment.created_at.strftime("%Y-%m-%d %H:%M") if comment.created_at else "Unknown"
                 preview = comment.body[:50].replace("\n", " ") + "..." if len(comment.body) > 50 else comment.body.replace("\n", " ")
-                self.comments_list.Append(f"{comment.user.login} ({time_str}): {preview}")
+                source = "[Review] " if comment.kind == "review" else ""
+                self.comments_list.Append(f"{comment.user.login} ({time_str}): {source}{preview}")
 
     def on_comment_select(self, event):
         """Show selected comment content."""
