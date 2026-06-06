@@ -11,9 +11,6 @@ from . import theme
 from .wx_safety import safe_raise
 
 
-MAX_BRANCHES_DISPLAY = 50
-
-
 class CommitsDialog(wx.Dialog):
     """Dialog for viewing repository commits."""
 
@@ -163,16 +160,8 @@ class CommitsDialog(wx.Dialog):
             matching = [b for b in self.all_branches if filter_text in b.get('name', '').lower()]
         else:
             matching = self.all_branches
-            # Hoist the default branch into view if it would fall outside
-            # the display limit (branches are sorted by recent activity)
-            default_pos = next(
-                (i for i, b in enumerate(matching) if b.get('is_default')), None
-            )
-            if default_pos is not None and default_pos >= MAX_BRANCHES_DISPLAY:
-                matching = [matching[default_pos]] + matching[:default_pos] + matching[default_pos + 1:]
 
-        # Limit to MAX_BRANCHES_DISPLAY
-        self.filtered_branches = matching[:MAX_BRANCHES_DISPLAY]
+        self.filtered_branches = matching
 
         if not self.filtered_branches:
             self.branch_choice.Append("(no matching branches)")
@@ -190,11 +179,6 @@ class CommitsDialog(wx.Dialog):
                 default_branch_idx = i
             if name in ('main', 'master') and main_idx is None:
                 main_idx = i
-
-        # Show count info if truncated
-        total_matching = len(matching)
-        if total_matching > MAX_BRANCHES_DISPLAY:
-            self.branch_choice.Append(f"... and {total_matching - MAX_BRANCHES_DISPLAY} more (use filter)")
 
         # Use the repo's default branch if known, then main/master by name,
         # otherwise the first branch (no filter only)
