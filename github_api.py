@@ -1069,7 +1069,88 @@ class GitHubAccount:
         return Commit.from_github_api(response.json())
 
     def get_branches(self, owner: str, repo: str, per_page: int = 100) -> list[dict]:
-        """Get branches for a repository, sorted by last commit date (most recent first)."""
+        """Get branches for a repository, sorted by last commit date (most recent first).
+
+        Uses GraphQL to get branch commit dates in bulk (one request per 100
+        branches, no per-branch calls). Falls back to REST if GraphQL fails.
+        """
+        branches = self._get_branches_graphql(owner, repo)
+        if branches is not None:
+            return branches
+        return self._get_branches_rest(owner, repo, per_page)
+
+    def _get_branches_graphql(self, owner: str, repo: str) -> list[dict] | None:
+        """Get branches via GraphQL, sorted by last commit date (most recent first).
+
+        GraphQL can't sort branch refs by commit date server-side (the
+        TAG_COMMIT_DATE order only applies to tags), but it returns commit
+        dates in bulk — one request per 100 branches with no per-branch
+        calls — so we sort client-side. The repository's default branch is
+        flagged with 'is_default'. Returns None on failure so the caller
+        can fall back to REST.
+        """
+        query = """
+        query($owner: String!, $name: String!, $cursor: String) {
+          repository(owner: $owner, name: $name) {
+            defaultBranchRef { name }
+            refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                name
+                target { ... on Commit { oid committedDate } }
+              }
+            }
+          }
+        }
+        """
+
+        def to_branch(node):
+            target = node.get('target') or {}
+            return {
+                'name': node.get('name', ''),
+                'commit': {'sha': target.get('oid')},
+                'last_commit_date': target.get('committedDate'),
+            }
+
+        branches = []
+        default_name = None
+        cursor = None
+
+        while True:
+            data = self._graphql(query, {
+                "owner": owner, "name": repo, "cursor": cursor
+            })
+            if data is None:
+                return None
+
+            repository = data.get('repository')
+            if repository is None:
+                return None
+
+            if default_name is None and repository.get('defaultBranchRef'):
+                default_name = repository['defaultBranchRef'].get('name')
+
+            refs = repository.get('refs') or {}
+            branches.extend(to_branch(n) for n in refs.get('nodes') or [])
+
+            page_info = refs.get('pageInfo') or {}
+            if not page_info.get('hasNextPage'):
+                break
+            cursor = page_info.get('endCursor')
+
+        for branch in branches:
+            branch['is_default'] = branch['name'] == default_name
+
+        # Sort by last commit date (most recent first), None values at end
+        branches.sort(
+            key=lambda b: b.get('last_commit_date') or '',
+            reverse=True
+        )
+
+        return branches
+
+    def _get_branches_rest(self, owner: str, repo: str, per_page: int = 100) -> list[dict]:
+        """REST fallback: list branches, then fetch commit dates for sorting."""
         branches = []
         page = 1
 

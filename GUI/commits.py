@@ -163,6 +163,13 @@ class CommitsDialog(wx.Dialog):
             matching = [b for b in self.all_branches if filter_text in b.get('name', '').lower()]
         else:
             matching = self.all_branches
+            # Hoist the default branch into view if it would fall outside
+            # the display limit (branches are sorted by recent activity)
+            default_pos = next(
+                (i for i, b in enumerate(matching) if b.get('is_default')), None
+            )
+            if default_pos is not None and default_pos >= MAX_BRANCHES_DISPLAY:
+                matching = [matching[default_pos]] + matching[:default_pos] + matching[default_pos + 1:]
 
         # Limit to MAX_BRANCHES_DISPLAY
         self.filtered_branches = matching[:MAX_BRANCHES_DISPLAY]
@@ -174,10 +181,13 @@ class CommitsDialog(wx.Dialog):
 
         # Add branches to dropdown
         default_idx = 0
+        default_branch_idx = None
         main_idx = None
         for i, branch in enumerate(self.filtered_branches):
             name = branch.get('name', '')
             self.branch_choice.Append(name)
+            if branch.get('is_default') and default_branch_idx is None:
+                default_branch_idx = i
             if name in ('main', 'master') and main_idx is None:
                 main_idx = i
 
@@ -186,9 +196,13 @@ class CommitsDialog(wx.Dialog):
         if total_matching > MAX_BRANCHES_DISPLAY:
             self.branch_choice.Append(f"... and {total_matching - MAX_BRANCHES_DISPLAY} more (use filter)")
 
-        # Use main/master if found (and no filter), otherwise use first
-        if main_idx is not None and not filter_text:
-            default_idx = main_idx
+        # Use the repo's default branch if known, then main/master by name,
+        # otherwise the first branch (no filter only)
+        if not filter_text:
+            if default_branch_idx is not None:
+                default_idx = default_branch_idx
+            elif main_idx is not None:
+                default_idx = main_idx
 
         self.branch_choice.SetSelection(default_idx)
         self.current_branch = self.filtered_branches[default_idx].get('name') if self.filtered_branches else None
