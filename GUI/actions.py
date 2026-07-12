@@ -776,7 +776,6 @@ class ArtifactsDialog(wx.Dialog):
     def update_buttons(self):
         """Update button states based on selection."""
         artifact = self.get_selected_artifact()
-        has_artifacts = len(self.artifacts) > 0
         can_download = artifact is not None and not artifact.expired
 
         self.download_btn.Enable(can_download)
@@ -814,8 +813,12 @@ class ArtifactsDialog(wx.Dialog):
         return download_dir
 
     def _dest_path(self, download_dir: str, artifact: Artifact) -> str:
-        """Artifacts are delivered as zips; save them with a .zip extension."""
-        name = artifact.name
+        """Artifacts are delivered as zips; save them with a .zip extension.
+
+        The name comes from the API, so strip any path components to keep the
+        file inside the chosen download directory.
+        """
+        name = os.path.basename(artifact.name)
         if not name.lower().endswith(".zip"):
             name = f"{name}.zip"
         return os.path.join(download_dir, name)
@@ -849,13 +852,37 @@ class ArtifactsDialog(wx.Dialog):
             if result != wx.YES:
                 return
 
+        # A progress dialog so large artifacts don't look frozen while they
+        # stream (the win-x64 builds are ~90 MB).
+        progress = wx.ProgressDialog(
+            "Downloading Artifact",
+            f"Downloading {artifact.name}...",
+            maximum=100,
+            parent=self,
+            style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_ELAPSED_TIME
+        )
+        state = {"done": False}
+
+        def progress_cb(downloaded, total):
+            def update():
+                if state["done"]:
+                    return
+                if total:
+                    progress.Update(min(int(downloaded * 100 / total), 100))
+                else:
+                    progress.Pulse()
+            wx.CallAfter(update)
+
         def do_download():
             success = self.account.download_artifact(
-                self.repo.owner, self.repo.name, artifact.id, dest_path
+                self.repo.owner, self.repo.name, artifact.id, dest_path,
+                progress_callback=progress_cb
             )
             wx.CallAfter(download_complete, success)
 
         def download_complete(success):
+            state["done"] = True
+            progress.Destroy()
             if success:
                 wx.MessageBox(
                     f"Downloaded:\n{dest_path}",
@@ -888,6 +915,19 @@ class ArtifactsDialog(wx.Dialog):
         download_dir = self._download_dir()
         if download_dir is None:
             return
+
+        # Warn once if any of the targets already exist, matching the
+        # single-download and release-asset flows.
+        existing = [a for a in downloadable
+                    if os.path.exists(self._dest_path(download_dir, a))]
+        if existing:
+            result = wx.MessageBox(
+                f"{len(existing)} file(s) already exist. Overwrite?",
+                "Files Exist",
+                wx.YES_NO | wx.ICON_QUESTION
+            )
+            if result != wx.YES:
+                return
 
         def do_download_all():
             succeeded = 0

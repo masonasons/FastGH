@@ -1,5 +1,6 @@
 """GitHub API wrapper with OAuth Device Flow authentication."""
 
+import os
 import time
 import threading
 from datetime import datetime
@@ -1669,28 +1670,33 @@ class GitHubAccount:
         # The artifact download endpoint 302-redirects to a short-lived signed
         # URL on a different host; requests drops the Authorization header on the
         # cross-host redirect, which is exactly what the signed URL expects.
-        response = self._session.get(
-            f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip",
-            stream=True,
-            allow_redirects=True
-        )
-
-        if response.status_code != 200:
-            return False
-
-        total_size = int(response.headers.get('content-length', 0))
-        downloaded = 0
-
         try:
-            with open(dest_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback:
-                            progress_callback(downloaded, total_size)
+            with self._session.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip",
+                stream=True,
+                allow_redirects=True
+            ) as response:
+                if response.status_code != 200:
+                    return False
+
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+
+                with open(dest_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback:
+                                progress_callback(downloaded, total_size)
             return True
         except Exception:
+            # Don't leave a truncated zip behind on a failed/interrupted download.
+            try:
+                if os.path.exists(dest_path):
+                    os.remove(dest_path)
+            except OSError:
+                pass
             return False
 
     # ============ Releases API ============

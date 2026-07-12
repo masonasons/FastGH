@@ -509,6 +509,9 @@ def _stream_response(status=200, chunks=(b"PK\x03\x04", b"data"), content_length
     total = content_length if content_length is not None else sum(len(c) for c in chunks)
     r.headers = {"content-length": str(total)}
     r.iter_content.return_value = iter(chunks)
+    # download_artifact uses `with self._session.get(...) as response`
+    r.__enter__.return_value = r
+    r.__exit__.return_value = False
     return r
 
 
@@ -537,4 +540,31 @@ def test_download_artifact_false_on_http_error(tmp_path):
     dest = tmp_path / "gone.zip"
     ok = acc.download_artifact("alice", "MyRepo", 555, str(dest))
     assert ok is False
+    assert not dest.exists()
+
+
+def test_download_artifact_false_when_request_raises(tmp_path):
+    acc = _make_account()
+    acc._session.get.side_effect = Exception("connection dropped")
+    dest = tmp_path / "boom.zip"
+    ok = acc.download_artifact("alice", "MyRepo", 555, str(dest))
+    assert ok is False
+    assert not dest.exists()
+
+
+def test_download_artifact_removes_partial_file_on_stream_error(tmp_path):
+    acc = _make_account()
+
+    def _chunks():
+        yield b"partial-zip-bytes"
+        raise IOError("stream interrupted")
+
+    resp = _stream_response()
+    resp.iter_content.return_value = _chunks()
+    acc._session.get.return_value = resp
+
+    dest = tmp_path / "half.zip"
+    ok = acc.download_artifact("alice", "MyRepo", 555, str(dest))
+    assert ok is False
+    # The truncated file must not be left behind.
     assert not dest.exists()
