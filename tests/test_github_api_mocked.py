@@ -444,3 +444,97 @@ def test_get_repo_surfaces_fork_parent():
     assert repo is not None
     assert repo.is_fork is True
     assert repo.parent_full_name == "masonasons/FastGH"
+
+
+# ---------------------------------------------------------------------------
+# get_run_artifacts / download_artifact
+# ---------------------------------------------------------------------------
+
+
+def _artifact_payload(**overrides):
+    base = {
+        "id": 555,
+        "name": "windows-build",
+        "size_in_bytes": 1024,
+        "archive_download_url": "https://api.github.com/repos/alice/MyRepo/actions/artifacts/555/zip",
+        "expired": False,
+        "created_at": "2026-03-01T10:00:00Z",
+        "expires_at": "2026-05-30T10:00:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_get_run_artifacts_returns_list():
+    acc = _make_account()
+    acc._session.get.return_value = _response(200, {"artifacts": [_artifact_payload()]})
+    artifacts = acc.get_run_artifacts("alice", "MyRepo", 100)
+    assert len(artifacts) == 1
+    assert artifacts[0].name == "windows-build"
+    assert artifacts[0].id == 555
+
+
+def test_get_run_artifacts_empty_on_error():
+    acc = _make_account()
+    acc._session.get.return_value = _response(404, {})
+    assert acc.get_run_artifacts("alice", "MyRepo", 100) == []
+
+
+def test_get_run_artifacts_stops_on_empty_page():
+    acc = _make_account()
+    acc._session.get.side_effect = [
+        _response(200, {"artifacts": [_artifact_payload()]}),
+        _response(200, {"artifacts": []}),
+    ]
+    artifacts = acc.get_run_artifacts("alice", "MyRepo", 100, per_page=10)
+    assert len(artifacts) == 1
+
+
+def test_get_run_artifacts_paginates_when_full_page():
+    acc = _make_account()
+    page1 = [_artifact_payload(id=i, name=f"a{i}") for i in range(2)]
+    page2 = [_artifact_payload(id=99, name="a99")]
+    acc._session.get.side_effect = [
+        _response(200, {"artifacts": page1}),
+        _response(200, {"artifacts": page2}),
+        _response(200, {"artifacts": []}),
+    ]
+    artifacts = acc.get_run_artifacts("alice", "MyRepo", 100, per_page=2)
+    assert len(artifacts) == 3
+
+
+def _stream_response(status=200, chunks=(b"PK\x03\x04", b"data"), content_length=None):
+    r = MagicMock()
+    r.status_code = status
+    total = content_length if content_length is not None else sum(len(c) for c in chunks)
+    r.headers = {"content-length": str(total)}
+    r.iter_content.return_value = iter(chunks)
+    return r
+
+
+def test_download_artifact_writes_file(tmp_path):
+    acc = _make_account()
+    acc._session.get.return_value = _stream_response(chunks=[b"PK\x03\x04", b"zipbody"])
+    dest = tmp_path / "windows-build.zip"
+    ok = acc.download_artifact("alice", "MyRepo", 555, str(dest))
+    assert ok is True
+    assert dest.read_bytes() == b"PK\x03\x04zipbody"
+
+
+def test_download_artifact_reports_progress(tmp_path):
+    acc = _make_account()
+    acc._session.get.return_value = _stream_response(chunks=[b"aaaa", b"bb"], content_length=6)
+    seen = []
+    dest = tmp_path / "art.zip"
+    acc.download_artifact("alice", "MyRepo", 555, str(dest),
+                          progress_callback=lambda d, t: seen.append((d, t)))
+    assert seen[-1] == (6, 6)
+
+
+def test_download_artifact_false_on_http_error(tmp_path):
+    acc = _make_account()
+    acc._session.get.return_value = _stream_response(status=410)
+    dest = tmp_path / "gone.zip"
+    ok = acc.download_artifact("alice", "MyRepo", 555, str(dest))
+    assert ok is False
+    assert not dest.exists()

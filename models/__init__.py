@@ -4,6 +4,6 @@ from .repository import Repository
 from .issue import Issue, PullRequest, Comment, Label, User
 from .commit import Commit, CommitAuthor, CommitFile
 from .user import UserProfile
-from .workflow import Workflow, WorkflowRun, WorkflowJob
+from .workflow import Workflow, WorkflowRun, WorkflowJob, Artifact
 from .release import Release, ReleaseAsset
 from .discussion import Discussion, DiscussionComment

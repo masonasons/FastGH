@@ -264,3 +264,63 @@ class WorkflowJob:
         if duration:
             return f"{icon} {self.name} ({duration})"
         return f"{icon} {self.name}"
+
+
+@dataclass
+class Artifact:
+    """GitHub Actions workflow-run artifact (a downloadable build output)."""
+    id: int
+    name: str
+    size_in_bytes: int
+    archive_download_url: str
+    expired: bool
+    created_at: Optional[datetime]
+    expires_at: Optional[datetime]
+
+    @classmethod
+    def from_github_api(cls, data: dict) -> "Artifact":
+        """Create an Artifact from a GitHub API response."""
+        created_at = None
+        if data.get('created_at'):
+            try:
+                created_at = datetime.fromisoformat(data['created_at'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+
+        expires_at = None
+        if data.get('expires_at'):
+            try:
+                expires_at = datetime.fromisoformat(data['expires_at'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+
+        return cls(
+            id=data.get('id', 0),
+            name=data.get('name', ''),
+            size_in_bytes=data.get('size_in_bytes', 0),
+            archive_download_url=data.get('archive_download_url', ''),
+            expired=data.get('expired', False),
+            created_at=created_at,
+            expires_at=expires_at,
+        )
+
+    def format_size(self) -> str:
+        """Format file size for display."""
+        size = self.size_in_bytes
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        elif size < 1024 * 1024 * 1024:
+            return f"{size / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size / (1024 * 1024 * 1024):.2f} GB"
+
+    def format_display(self) -> str:
+        """Format artifact for display in a list."""
+        parts = [self.format_size()]
+        if self.expired:
+            parts.append("expired")
+        elif self.created_at:
+            parts.append(self.created_at.strftime('%Y-%m-%d'))
+        return f"{self.name} ({', '.join(parts)})"

@@ -10,7 +10,7 @@ from models.repository import Repository
 from models.issue import Issue, PullRequest, Comment
 from models.commit import Commit
 from models.user import UserProfile
-from models.workflow import Workflow, WorkflowRun, WorkflowJob
+from models.workflow import Workflow, WorkflowRun, WorkflowJob, Artifact
 from models.release import Release, ReleaseAsset
 from models.notification import Notification
 from models.event import Event
@@ -1618,6 +1618,80 @@ class GitHubAccount:
                 if log_response.status_code == 200:
                     return log_response.text
         return None
+
+    def get_run_artifacts(self, owner: str, repo: str, run_id: int, per_page: int = 100) -> list[Artifact]:
+        """Get the artifacts produced by a workflow run."""
+        artifacts = []
+        page = 1
+
+        while True:
+            response = self._session.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
+                params={
+                    "per_page": per_page,
+                    "page": page
+                }
+            )
+
+            if response.status_code != 200:
+                break
+
+            data = response.json()
+            items = data.get('artifacts', [])
+            if not items:
+                break
+
+            for item in items:
+                artifacts.append(Artifact.from_github_api(item))
+
+            if len(items) < per_page:
+                break
+
+            page += 1
+
+        return artifacts
+
+    def download_artifact(self, owner: str, repo: str, artifact_id: int, dest_path: str,
+                          progress_callback=None) -> bool:
+        """Download a workflow-run artifact (a zip) to the specified path.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            artifact_id: Artifact ID to download
+            dest_path: Full path where to save the zip file
+            progress_callback: Optional callback(downloaded_bytes, total_bytes)
+
+        Returns:
+            True if download succeeded, False otherwise. Expired artifacts
+            return False (GitHub responds 410 Gone).
+        """
+        # The artifact download endpoint 302-redirects to a short-lived signed
+        # URL on a different host; requests drops the Authorization header on the
+        # cross-host redirect, which is exactly what the signed URL expects.
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip",
+            stream=True,
+            allow_redirects=True
+        )
+
+        if response.status_code != 200:
+            return False
+
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+
+        try:
+            with open(dest_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback:
+                            progress_callback(downloaded, total_size)
+            return True
+        except Exception:
+            return False
 
     # ============ Releases API ============
 
