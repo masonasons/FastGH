@@ -432,3 +432,15 @@ def test_graphql_returns_none_on_exception():
     result = acc._graphql("{ viewer { login } }")
     assert result is None
     assert "network down" in acc.get_last_error()
+
+
+def test_get_repo_surfaces_fork_parent():
+    acc = _make_account()
+    acc._session.get.return_value = _response(200, _repo_payload(
+        name="FastGH", fork=True,
+        parent={"full_name": "masonasons/FastGH", "owner": {"login": "masonasons"}},
+    ))
+    repo = acc.get_repo("kellylford", "FastGH")
+    assert repo is not None
+    assert repo.is_fork is True
+    assert repo.parent_full_name == "masonasons/FastGH"

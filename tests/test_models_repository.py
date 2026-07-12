@@ -286,3 +286,39 @@ def test_repo_relative_time_no_pushed_at():
     data["pushed_at"] = None
     r = Repository.from_github_api(data)
     assert r._format_relative_time() == "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# Fork / upstream parent parsing
+# ---------------------------------------------------------------------------
+
+
+def test_repo_not_a_fork_by_default():
+    r = Repository.from_github_api(_repo_data())
+    assert r.is_fork is False
+    assert r.parent_full_name is None
+
+
+def test_repo_is_fork_flag_parsed():
+    r = Repository.from_github_api(_repo_data(fork=True))
+    assert r.is_fork is True
+
+
+def test_repo_parent_full_name_parsed():
+    r = Repository.from_github_api(_repo_data(
+        fork=True,
+        parent={"full_name": "upstream/MyRepo", "owner": {"login": "upstream"}},
+    ))
+    assert r.is_fork is True
+    assert r.parent_full_name == "upstream/MyRepo"
+
+
+def test_repo_parent_absent_gives_none():
+    # A fork fetched from a list has `fork` but no `parent` object.
+    r = Repository.from_github_api(_repo_data(fork=True))
+    assert r.parent_full_name is None
+
+
+def test_repo_parent_none_value_is_safe():
+    r = Repository.from_github_api(_repo_data(fork=False, parent=None))
+    assert r.parent_full_name is None

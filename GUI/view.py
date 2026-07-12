@@ -258,21 +258,8 @@ class ViewRepoDialog(wx.Dialog):
         )
         self.main_box.Add(self.details_text, 0, wx.EXPAND | wx.ALL, 10)
 
-        # Build details
-        details = []
-        details.append(f"Name: {self.repo.full_name}")
-        details.append(f"Owner: {self.repo.owner}")
-        details.append(f"Language: {self.repo.language or 'Not specified'}")
-        details.append(f"Stars: {self.repo.stars}")
-        details.append(f"Forks: {self.repo.forks}")
-        details.append(f"Open Issues: {self.repo.open_issues}")
-        details.append(f"Visibility: {'Private' if self.repo.private else 'Public'}")
-        if self.repo.pushed_at:
-            details.append(f"Last Push: {self.repo._format_relative_time()} ({self.repo.pushed_at.strftime('%Y-%m-%d %H:%M')})")
-        details.append(f"URL: {self.repo.html_url}")
-
-        separator = "\r\n" if platform.system() != "Darwin" else "\n"
-        self.details_text.SetValue(separator.join(details))
+        # Build details (re-rendered later if the upstream parent is resolved)
+        self._render_details()
 
         # Buttons - first row (star/watch)
         btn_row1 = wx.BoxSizer(wx.HORIZONTAL)
@@ -328,6 +315,11 @@ class ViewRepoDialog(wx.Dialog):
         self.owner_btn = wx.Button(self.panel, -1, "View O&wner")
         btn_row2.Add(self.owner_btn, 0, wx.RIGHT, 5)
 
+        # Only meaningful for forks; enabled once we know this is a fork.
+        self.upstream_btn = wx.Button(self.panel, -1, "View &Upstream")
+        self.upstream_btn.Enable(self.repo.is_fork)
+        btn_row2.Add(self.upstream_btn, 0, wx.RIGHT, 5)
+
         self.close_btn = wx.Button(self.panel, wx.ID_CANCEL, "Cl&ose")
         btn_row2.Add(self.close_btn, 0)
 
@@ -335,6 +327,31 @@ class ViewRepoDialog(wx.Dialog):
 
         self.panel.SetSizer(self.main_box)
         self.panel.Layout()
+
+    def _render_details(self):
+        """Fill the details box from the current repo state."""
+        details = []
+        details.append(f"Name: {self.repo.full_name}")
+        details.append(f"Owner: {self.repo.owner}")
+        details.append(f"Language: {self.repo.language or 'Not specified'}")
+        details.append(f"Stars: {self.repo.stars}")
+        details.append(f"Forks: {self.repo.forks}")
+        details.append(f"Open Issues: {self.repo.open_issues}")
+        details.append(f"Visibility: {'Private' if self.repo.private else 'Public'}")
+        if self.repo.is_fork:
+            if self.repo.parent_full_name:
+                details.append(f"Forked from: {self.repo.parent_full_name}")
+            else:
+                details.append("Fork: Yes")
+        if self.repo.pushed_at:
+            details.append(f"Last Push: {self.repo._format_relative_time()} ({self.repo.pushed_at.strftime('%Y-%m-%d %H:%M')})")
+        details.append(f"URL: {self.repo.html_url}")
+
+        separator = "\r\n" if platform.system() != "Darwin" else "\n"
+        try:
+            self.details_text.SetValue(separator.join(details))
+        except RuntimeError:
+            pass  # Dialog was destroyed
 
     def bind_events(self):
         """Bind event handlers."""
@@ -355,6 +372,7 @@ class ViewRepoDialog(wx.Dialog):
         self.releases_btn.Bind(wx.EVT_BUTTON, self.on_view_releases)
         self.forks_btn.Bind(wx.EVT_BUTTON, self.on_view_forks)
         self.owner_btn.Bind(wx.EVT_BUTTON, self.on_view_owner)
+        self.upstream_btn.Bind(wx.EVT_BUTTON, self.on_view_upstream)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
 
     def on_char_hook(self, event):
@@ -375,6 +393,27 @@ class ViewRepoDialog(wx.Dialog):
 
         # Check git status
         self.update_git_button()
+
+        # Resolve the fork's upstream parent in the background. `parent` is only
+        # returned by the single-repo API, so a repo opened from a list has
+        # is_fork set but parent_full_name empty until we fetch details.
+        if self.repo.is_fork and not self.repo.parent_full_name:
+            self._resolve_parent()
+
+    def _resolve_parent(self):
+        """Fetch the fork's parent full name in the background and show it."""
+        def do_resolve():
+            detail = self.account.get_repo(self.repo.owner, self.repo.name)
+            parent = detail.parent_full_name if detail else None
+            if parent:
+                wx.CallAfter(self._on_parent_resolved, parent)
+
+        threading.Thread(target=do_resolve, daemon=True).start()
+
+    def _on_parent_resolved(self, parent_full_name: str):
+        """Record the resolved parent and refresh the details box."""
+        self.repo.parent_full_name = parent_full_name
+        self._render_details()
 
     def get_repo_path(self):
         """Get the local path for this repository."""
@@ -737,6 +776,48 @@ class ViewRepoDialog(wx.Dialog):
         """View owner profile."""
         from GUI.search import UserProfileDialog
         dlg = UserProfileDialog(self, self.repo.owner)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def on_view_upstream(self, event):
+        """Open the upstream (parent) repository this fork was created from."""
+        if not self.repo.is_fork:
+            wx.MessageBox(
+                f"{self.repo.full_name} is not a fork.",
+                "No Upstream",
+                wx.OK | wx.ICON_INFORMATION
+            )
+            return
+
+        # Resolve the parent full name if the background lookup hasn't finished
+        # (or the repo was opened without detail data).
+        parent_full_name = self.repo.parent_full_name
+        if not parent_full_name:
+            detail = self.account.get_repo(self.repo.owner, self.repo.name)
+            parent_full_name = detail.parent_full_name if detail else None
+            if parent_full_name:
+                self.repo.parent_full_name = parent_full_name
+                self._render_details()
+
+        if not parent_full_name or "/" not in parent_full_name:
+            wx.MessageBox(
+                "Could not determine the upstream repository.",
+                "No Upstream",
+                wx.OK | wx.ICON_WARNING
+            )
+            return
+
+        owner, _, name = parent_full_name.partition("/")
+        parent_repo = self.account.get_repo(owner, name)
+        if not parent_repo:
+            wx.MessageBox(
+                f"Upstream repository '{parent_full_name}' not found or not accessible.",
+                "Repository Not Found",
+                wx.OK | wx.ICON_ERROR
+            )
+            return
+
+        dlg = ViewRepoDialog(self, parent_repo)
         dlg.ShowModal()
         dlg.Destroy()
 
