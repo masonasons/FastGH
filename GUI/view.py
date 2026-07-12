@@ -783,72 +783,94 @@ class ViewRepoDialog(wx.Dialog):
         dlg.Destroy()
 
     def on_view_upstream(self, event):
-        """Open the upstream (parent) repository this fork was created from.
-
-        The parent name and the parent repo are fetched on a background thread
-        (like check_status) so the UI never blocks on the network; the result
-        dialog is shown back on the main thread.
-        """
-        if not self.repo.is_fork:
-            wx.MessageBox(
-                f"{self.repo.full_name} is not a fork.",
-                "No Upstream",
-                wx.OK | wx.ICON_INFORMATION
-            )
-            return
-
+        """Open the upstream (parent) repository this fork was created from."""
         # Disable while loading: gives feedback and avoids a duplicate fetch if
         # clicked again before this one returns.
         self.upstream_btn.Enable(False)
+        open_upstream_repo(self, self.account, self.repo, on_finally=self._after_upstream)
 
-        def do_open():
-            # Resolve the parent full name if the background lookup hasn't
-            # finished (or the repo was opened from a list, without detail data).
-            parent_full_name = self.repo.parent_full_name
-            if not parent_full_name:
-                detail = self.account.get_repo(self.repo.owner, self.repo.name)
-                parent_full_name = detail.parent_full_name if detail else None
+    def _after_upstream(self):
+        """Re-enable the button and refresh the details line after a lookup.
 
-            parent_repo = None
-            if parent_full_name and "/" in parent_full_name:
-                owner, _, name = parent_full_name.partition("/")
-                parent_repo = self.account.get_repo(owner, name)
-
-            wx.CallAfter(self._open_upstream_result, parent_full_name, parent_repo)
-
-        threading.Thread(target=do_open, daemon=True).start()
-
-    def _open_upstream_result(self, parent_full_name, parent_repo):
-        """Show the resolved upstream repo (or an error) on the main thread."""
-        try:
-            self.upstream_btn.Enable(True)
-        except RuntimeError:
-            return  # Dialog was closed while loading.
-
-        # Cache and surface the parent name if we just learned it.
-        if parent_full_name and self.repo.parent_full_name != parent_full_name:
-            self.repo.parent_full_name = parent_full_name
-            self._render_details()
-
-        if not parent_full_name or "/" not in parent_full_name:
-            wx.MessageBox(
-                "Could not determine the upstream repository.",
-                "No Upstream",
-                wx.OK | wx.ICON_WARNING
-            )
-            return
-
-        if not parent_repo:
-            wx.MessageBox(
-                f"Upstream repository '{parent_full_name}' not found or not accessible.",
-                "Repository Not Found",
-                wx.OK | wx.ICON_ERROR
-            )
-            return
-
-        dlg = ViewRepoDialog(self, parent_repo)
-        dlg.ShowModal()
-        dlg.Destroy()
+        Raises RuntimeError if the dialog was closed while loading; the caller
+        treats that as "give up".
+        """
+        self.upstream_btn.Enable(True)
+        self._render_details()
 
     def on_close(self, event):
         self.Destroy()
+
+
+def open_upstream_repo(parent_window, account, repo, on_finally=None):
+    """Resolve ``repo``'s upstream parent off the UI thread and open it.
+
+    Shared by the repo info dialog's "View Upstream" button and the repo
+    list's context menu. Shows an error dialog if ``repo`` isn't a fork or the
+    parent can't be resolved. ``on_finally`` (optional) runs on the UI thread
+    when the lookup completes — e.g. to re-enable a button; if it raises
+    RuntimeError (its window was closed) the navigation is abandoned.
+    """
+    if not repo.is_fork:
+        wx.MessageBox(
+            f"{repo.full_name} is not a fork.",
+            "No Upstream",
+            wx.OK | wx.ICON_INFORMATION
+        )
+        if on_finally:
+            try:
+                on_finally()
+            except RuntimeError:
+                pass
+        return
+
+    def do_open():
+        # `parent` is only returned by the single-repo endpoint, so a repo
+        # opened from a list has is_fork set but no parent name yet.
+        parent_full_name = repo.parent_full_name
+        if not parent_full_name:
+            detail = account.get_repo(repo.owner, repo.name)
+            parent_full_name = detail.parent_full_name if detail else None
+
+        parent_repo = None
+        if parent_full_name and "/" in parent_full_name:
+            owner, _, name = parent_full_name.partition("/")
+            parent_repo = account.get_repo(owner, name)
+
+        wx.CallAfter(_open_upstream_result, parent_window, repo,
+                     parent_full_name, parent_repo, on_finally)
+
+    threading.Thread(target=do_open, daemon=True).start()
+
+
+def _open_upstream_result(parent_window, repo, parent_full_name, parent_repo, on_finally):
+    """Show the resolved upstream repo (or an error) on the main thread."""
+    # Cache the resolved name on the repo so its details view can show it.
+    if parent_full_name and "/" in parent_full_name:
+        repo.parent_full_name = parent_full_name
+
+    if on_finally:
+        try:
+            on_finally()
+        except RuntimeError:
+            return  # Originating window was closed while loading.
+
+    if not parent_full_name or "/" not in parent_full_name:
+        wx.MessageBox(
+            "Could not determine the upstream repository.",
+            "No Upstream",
+            wx.OK | wx.ICON_WARNING
+        )
+        return
+
+    if not parent_repo:
+        wx.MessageBox(
+            f"Upstream repository '{parent_full_name}' not found or not accessible.",
+            "Repository Not Found",
+            wx.OK | wx.ICON_ERROR
+        )
+        return
+
+    dlg = ViewRepoDialog(parent_window, parent_repo)
+    dlg.ShowModal()
+    dlg.Destroy()
