@@ -22,6 +22,10 @@ class Repository:
     url: str
     html_url: str
     private: bool
+    is_fork: bool = False
+    # Full name (owner/repo) of the fork's upstream parent, when known.
+    # Only present in the single-repo API response, not in list responses.
+    parent_full_name: Optional[str] = None
 
     @classmethod
     def from_github_api(cls, data: dict) -> 'Repository':
@@ -55,6 +59,9 @@ class Repository:
             url=data['url'],
             html_url=data['html_url'],
             private=data.get('private', False),
+            is_fork=data.get('fork', False),
+            # `parent` is only included when fetching a single repository.
+            parent_full_name=(data.get('parent') or {}).get('full_name'),
         )
 
     def format_display(self) -> str:

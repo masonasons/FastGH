@@ -694,6 +694,11 @@ class MainGui(wx.Frame):
         m_releases = menu.Append(-1, "View &Releases")
         self.Bind(wx.EVT_MENU, self.on_view_releases, m_releases)
 
+        # Only offered for forks; upstream navigation is meaningless otherwise.
+        if getattr(repo, "is_fork", False):
+            m_upstream = menu.Append(-1, "View &Upstream")
+            self.Bind(wx.EVT_MENU, self.on_view_upstream, m_upstream)
+
         menu.AppendSeparator()
 
         m_owner = menu.Append(-1, "View O&wner Profile")
@@ -1698,6 +1703,13 @@ class MainGui(wx.Frame):
             dlg = ActionsDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
+
+    def on_view_upstream(self, event):
+        """Open the upstream (parent) repository of the selected fork."""
+        repo = self.get_selected_repo()
+        if repo:
+            from GUI.view import open_upstream_repo
+            open_upstream_repo(self._get_dialog_parent(), self.app.currentAccount, repo)
 
     def on_view_releases(self, event):
         """Open releases dialog."""
