@@ -4,9 +4,10 @@ import wx
 import webbrowser
 import platform
 import threading
+import os
 from application import get_app
 from models.repository import Repository
-from models.workflow import Workflow, WorkflowRun, WorkflowJob
+from models.workflow import Workflow, WorkflowRun, WorkflowJob, Artifact
 from . import theme
 
 
@@ -430,6 +431,9 @@ class ViewWorkflowRunDialog(wx.Dialog):
         self.open_job_btn = wx.Button(self.panel, label="Open &Job in Browser")
         btn_sizer1.Add(self.open_job_btn, 0, wx.RIGHT, 5)
 
+        self.artifacts_btn = wx.Button(self.panel, label="&Artifacts...")
+        btn_sizer1.Add(self.artifacts_btn, 0, wx.RIGHT, 5)
+
         self.close_btn = wx.Button(self.panel, wx.ID_CLOSE, label="Cl&ose")
         btn_sizer1.Add(self.close_btn, 0)
 
@@ -526,6 +530,7 @@ class ViewWorkflowRunDialog(wx.Dialog):
         self.cancel_btn.Bind(wx.EVT_BUTTON, self.on_cancel)
         self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
         self.open_job_btn.Bind(wx.EVT_BUTTON, self.on_open_job)
+        self.artifacts_btn.Bind(wx.EVT_BUTTON, self.on_view_artifacts)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
         self.jobs_list.Bind(wx.EVT_LISTBOX, self.on_job_selection_change)
         self.jobs_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view_logs)
@@ -654,6 +659,315 @@ class ViewWorkflowRunDialog(wx.Dialog):
             dlg = JobLogsDialog(self, self.repo, job)
             dlg.ShowModal()
             dlg.Destroy()
+
+    def on_view_artifacts(self, event):
+        """View and download artifacts produced by this run."""
+        dlg = ArtifactsDialog(self, self.repo, self.run)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def on_close(self, event):
+        """Close dialog."""
+        self.EndModal(wx.ID_CLOSE)
+
+
+class ArtifactsDialog(wx.Dialog):
+    """Dialog for viewing and downloading a workflow run's artifacts."""
+
+    def __init__(self, parent, repo: Repository, run: WorkflowRun):
+        self.repo = repo
+        self.run = run
+        self.app = get_app()
+        self.account = self.app.currentAccount
+        self.artifacts = []
+
+        title = f"Artifacts - Run #{run.run_number}"
+        wx.Dialog.__init__(self, parent, title=title, size=(700, 500))
+
+        self.init_ui()
+        self.bind_events()
+        theme.apply_theme(self)
+
+        # Load artifacts
+        self.load_artifacts()
+
+    def init_ui(self):
+        """Initialize the UI."""
+        self.panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # Artifacts list
+        list_label = wx.StaticText(self.panel, label="&Artifacts:")
+        main_sizer.Add(list_label, 0, wx.LEFT | wx.TOP, 10)
+
+        self.artifacts_list = wx.ListBox(self.panel, style=wx.LB_SINGLE)
+        main_sizer.Add(self.artifacts_list, 1, wx.EXPAND | wx.ALL, 10)
+
+        # Buttons
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.download_btn = wx.Button(self.panel, label="&Download Selected")
+        btn_sizer.Add(self.download_btn, 0, wx.RIGHT, 5)
+
+        self.download_all_btn = wx.Button(self.panel, label="Download A&ll")
+        btn_sizer.Add(self.download_all_btn, 0, wx.RIGHT, 5)
+
+        self.refresh_btn = wx.Button(self.panel, label="&Refresh")
+        btn_sizer.Add(self.refresh_btn, 0, wx.RIGHT, 5)
+
+        self.open_browser_btn = wx.Button(self.panel, label="Open Run in &Browser")
+        btn_sizer.Add(self.open_browser_btn, 0, wx.RIGHT, 5)
+
+        self.close_btn = wx.Button(self.panel, wx.ID_CLOSE, label="Cl&ose")
+        btn_sizer.Add(self.close_btn, 0)
+
+        main_sizer.Add(btn_sizer, 0, wx.ALL | wx.ALIGN_CENTER, 10)
+
+        self.panel.SetSizer(main_sizer)
+
+    def bind_events(self):
+        """Bind event handlers."""
+        self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
+        self.download_btn.Bind(wx.EVT_BUTTON, self.on_download)
+        self.download_all_btn.Bind(wx.EVT_BUTTON, self.on_download_all)
+        self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
+        self.open_browser_btn.Bind(wx.EVT_BUTTON, self.on_open_browser)
+        self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
+        self.artifacts_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
+        self.artifacts_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_download)
+        self.artifacts_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+
+    def on_char_hook(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.on_close(None)
+        else:
+            event.Skip()
+
+    def load_artifacts(self):
+        """Load artifacts in background."""
+        self.artifacts_list.Clear()
+        self.artifacts_list.Append("Loading artifacts...")
+        self.artifacts = []
+        self.update_buttons()
+
+        def do_load():
+            artifacts = self.account.get_run_artifacts(
+                self.repo.owner, self.repo.name, self.run.id
+            )
+            wx.CallAfter(self.update_artifacts_list, artifacts)
+
+        threading.Thread(target=do_load, daemon=True).start()
+
+    def update_artifacts_list(self, artifacts):
+        """Update the artifacts list."""
+        self.artifacts = artifacts
+        self.artifacts_list.Clear()
+
+        if not artifacts:
+            self.artifacts_list.Append("No artifacts found")
+        else:
+            for artifact in artifacts:
+                self.artifacts_list.Append(artifact.format_display())
+
+        self.update_buttons()
+
+    def update_buttons(self):
+        """Update button states based on selection."""
+        artifact = self.get_selected_artifact()
+        can_download = artifact is not None and not artifact.expired
+
+        self.download_btn.Enable(can_download)
+        # Download-all is useful only if at least one artifact is downloadable
+        self.download_all_btn.Enable(any(not a.expired for a in self.artifacts))
+
+    def get_selected_artifact(self) -> Artifact | None:
+        """Get the currently selected artifact."""
+        selection = self.artifacts_list.GetSelection()
+        if selection != wx.NOT_FOUND and selection < len(self.artifacts):
+            return self.artifacts[selection]
+        return None
+
+    def on_selection_change(self, event):
+        """Handle selection change."""
+        self.update_buttons()
+
+    def on_refresh(self, event):
+        """Refresh the artifacts list."""
+        self.load_artifacts()
+
+    def _download_dir(self) -> str | None:
+        """Return the download directory, creating it if needed. None on failure."""
+        download_dir = self.app.prefs.download_location
+        if not os.path.exists(download_dir):
+            try:
+                os.makedirs(download_dir)
+            except Exception as e:
+                wx.MessageBox(
+                    f"Could not create download directory:\n{e}",
+                    "Error",
+                    wx.OK | wx.ICON_ERROR
+                )
+                return None
+        return download_dir
+
+    def _dest_path(self, download_dir: str, artifact: Artifact) -> str:
+        """Artifacts are delivered as zips; save them with a .zip extension.
+
+        The name comes from the API, so strip any path components to keep the
+        file inside the chosen download directory.
+        """
+        name = os.path.basename(artifact.name)
+        if not name.lower().endswith(".zip"):
+            name = f"{name}.zip"
+        return os.path.join(download_dir, name)
+
+    def on_download(self, event):
+        """Download the selected artifact."""
+        artifact = self.get_selected_artifact()
+        if not artifact:
+            return
+
+        if artifact.expired:
+            wx.MessageBox(
+                "This artifact has expired and can no longer be downloaded.",
+                "Artifact Expired",
+                wx.OK | wx.ICON_WARNING
+            )
+            return
+
+        download_dir = self._download_dir()
+        if download_dir is None:
+            return
+
+        dest_path = self._dest_path(download_dir, artifact)
+
+        if os.path.exists(dest_path):
+            result = wx.MessageBox(
+                f"File already exists:\n{dest_path}\n\nOverwrite?",
+                "File Exists",
+                wx.YES_NO | wx.ICON_QUESTION
+            )
+            if result != wx.YES:
+                return
+
+        # A progress dialog so large artifacts don't look frozen while they
+        # stream (the win-x64 builds are ~90 MB).
+        progress = wx.ProgressDialog(
+            "Downloading Artifact",
+            f"Downloading {artifact.name}...",
+            maximum=100,
+            parent=self,
+            style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE | wx.PD_ELAPSED_TIME
+        )
+        state = {"done": False}
+
+        def progress_cb(downloaded, total):
+            def update():
+                if state["done"]:
+                    return
+                if total:
+                    progress.Update(min(int(downloaded * 100 / total), 100))
+                else:
+                    progress.Pulse()
+            wx.CallAfter(update)
+
+        def do_download():
+            success = self.account.download_artifact(
+                self.repo.owner, self.repo.name, artifact.id, dest_path,
+                progress_callback=progress_cb
+            )
+            wx.CallAfter(download_complete, success)
+
+        def download_complete(success):
+            state["done"] = True
+            progress.Destroy()
+            if success:
+                wx.MessageBox(
+                    f"Downloaded:\n{dest_path}",
+                    "Download Complete",
+                    wx.OK | wx.ICON_INFORMATION
+                )
+            else:
+                wx.MessageBox(
+                    f"Failed to download {artifact.name}.",
+                    "Error",
+                    wx.OK | wx.ICON_ERROR
+                )
+
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def on_download_all(self, event):
+        """Download all non-expired artifacts in the background."""
+        downloadable = [a for a in self.artifacts if not a.expired]
+        if not downloadable:
+            return
+
+        result = wx.MessageBox(
+            f"Download {len(downloadable)} artifact(s) in background?",
+            "Confirm Download",
+            wx.YES_NO | wx.ICON_QUESTION
+        )
+        if result != wx.YES:
+            return
+
+        download_dir = self._download_dir()
+        if download_dir is None:
+            return
+
+        # Warn once if any of the targets already exist, matching the
+        # single-download and release-asset flows.
+        existing = [a for a in downloadable
+                    if os.path.exists(self._dest_path(download_dir, a))]
+        if existing:
+            result = wx.MessageBox(
+                f"{len(existing)} file(s) already exist. Overwrite?",
+                "Files Exist",
+                wx.YES_NO | wx.ICON_QUESTION
+            )
+            if result != wx.YES:
+                return
+
+        def do_download_all():
+            succeeded = 0
+            failed = 0
+            for artifact in downloadable:
+                dest_path = self._dest_path(download_dir, artifact)
+                if self.account.download_artifact(
+                    self.repo.owner, self.repo.name, artifact.id, dest_path
+                ):
+                    succeeded += 1
+                else:
+                    failed += 1
+            wx.CallAfter(download_all_complete, succeeded, failed)
+
+        def download_all_complete(succeeded, failed):
+            if failed == 0:
+                wx.MessageBox(
+                    f"Downloaded {succeeded} artifact(s) to:\n{download_dir}",
+                    "Download Complete",
+                    wx.OK | wx.ICON_INFORMATION
+                )
+            else:
+                wx.MessageBox(
+                    f"Downloaded {succeeded} artifact(s), {failed} failed.\n\nLocation: {download_dir}",
+                    "Download Complete",
+                    wx.OK | wx.ICON_WARNING
+                )
+
+        threading.Thread(target=do_download_all, daemon=True).start()
+
+    def on_open_browser(self, event):
+        """Open the workflow run in the browser."""
+        webbrowser.open(self.run.html_url)
+
+    def on_key(self, event):
+        """Handle key events."""
+        if event.GetKeyCode() == wx.WXK_RETURN:
+            self.on_download(None)
+        else:
+            event.Skip()
 
     def on_close(self, event):
         """Close dialog."""

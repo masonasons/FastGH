@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from models.workflow import Workflow, WorkflowJob, WorkflowRun
+from models.workflow import Workflow, WorkflowJob, WorkflowRun, Artifact
 
 
 # ---------------------------------------------------------------------------
@@ -551,3 +551,64 @@ def test_job_format_display_no_duration():
     display = j.format_display()
     assert "build" in display
     assert "(" not in display
+
+
+# ---------------------------------------------------------------------------
+# Artifact.from_github_api
+# ---------------------------------------------------------------------------
+
+
+def _artifact_data(**overrides) -> dict:
+    base = {
+        "id": 555,
+        "name": "windows-build",
+        "size_in_bytes": 2_500_000,
+        "archive_download_url": "https://api.github.com/repos/owner/repo/actions/artifacts/555/zip",
+        "expired": False,
+        "created_at": "2026-03-01T10:00:00Z",
+        "expires_at": "2026-05-30T10:00:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_artifact_from_api_basic_fields():
+    a = Artifact.from_github_api(_artifact_data())
+    assert a.id == 555
+    assert a.name == "windows-build"
+    assert a.size_in_bytes == 2_500_000
+    assert a.expired is False
+    assert a.archive_download_url.endswith("/555/zip")
+
+
+def test_artifact_from_api_parses_dates():
+    a = Artifact.from_github_api(_artifact_data())
+    assert a.created_at is not None and a.created_at.year == 2026
+    assert a.expires_at is not None and a.expires_at.month == 5
+
+
+def test_artifact_from_api_handles_missing_fields():
+    a = Artifact.from_github_api({})
+    assert a.id == 0
+    assert a.name == ""
+    assert a.size_in_bytes == 0
+    assert a.expired is False
+    assert a.created_at is None
+
+
+def test_artifact_format_size_kb_mb():
+    assert Artifact.from_github_api(_artifact_data(size_in_bytes=512)).format_size() == "512 B"
+    assert Artifact.from_github_api(_artifact_data(size_in_bytes=2048)).format_size() == "2.0 KB"
+    assert Artifact.from_github_api(_artifact_data(size_in_bytes=5 * 1024 * 1024)).format_size() == "5.0 MB"
+
+
+def test_artifact_format_display_includes_name_and_size():
+    display = Artifact.from_github_api(_artifact_data()).format_display()
+    assert "windows-build" in display
+    assert "MB" in display
+    assert "expired" not in display
+
+
+def test_artifact_format_display_marks_expired():
+    display = Artifact.from_github_api(_artifact_data(expired=True)).format_display()
+    assert "expired" in display
