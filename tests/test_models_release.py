@@ -382,3 +382,87 @@ def test_release_format_display_asset_count_singular():
 def test_release_format_display_no_assets():
     r = Release.from_github_api(_release_data(assets=[]))
     assert "0 assets" in r.format_display()
+
+
+def test_release_format_display_includes_download_total():
+    r = Release.from_github_api(_release_data(assets=[
+        _asset_data(download_count=40),
+        _asset_data(download_count=2),
+    ]))
+    assert "42 downloads" in r.format_display()
+
+
+def test_release_format_display_download_total_singular():
+    r = Release.from_github_api(_release_data(assets=[_asset_data(download_count=1)]))
+    display = r.format_display()
+    assert "1 download" in display
+    assert "1 downloads" not in display
+
+
+def test_release_format_display_zero_downloads_with_assets():
+    r = Release.from_github_api(_release_data(assets=[_asset_data(download_count=0)]))
+    assert "0 downloads" in r.format_display()
+
+
+def test_release_format_display_omits_downloads_when_no_assets():
+    # Nothing to download, so the count would only add noise.
+    r = Release.from_github_api(_release_data(assets=[]))
+    assert "download" not in r.format_display()
+
+
+# ---------------------------------------------------------------------------
+# Release.total_downloads
+# ---------------------------------------------------------------------------
+
+
+def test_total_downloads_sums_assets():
+    r = Release.from_github_api(_release_data(assets=[
+        _asset_data(download_count=10),
+        _asset_data(download_count=25),
+        _asset_data(download_count=7),
+    ]))
+    assert r.total_downloads == 42
+
+
+def test_total_downloads_single_asset():
+    r = Release.from_github_api(_release_data(assets=[_asset_data(download_count=5)]))
+    assert r.total_downloads == 5
+
+
+def test_total_downloads_no_assets_is_zero():
+    r = Release.from_github_api(_release_data(assets=[]))
+    assert r.total_downloads == 0
+
+
+def test_total_downloads_all_zero():
+    r = Release.from_github_api(_release_data(assets=[
+        _asset_data(download_count=0),
+        _asset_data(download_count=0),
+    ]))
+    assert r.total_downloads == 0
+
+
+def test_total_downloads_missing_count_treated_as_zero():
+    # ReleaseAsset defaults download_count to 0 when the API omits it.
+    r = Release.from_github_api(_release_data(assets=[{}, _asset_data(download_count=3)]))
+    assert r.total_downloads == 3
+
+
+# ---------------------------------------------------------------------------
+# Release.format_downloads
+# ---------------------------------------------------------------------------
+
+
+def test_format_downloads_plural():
+    r = Release.from_github_api(_release_data(assets=[_asset_data(download_count=42)]))
+    assert r.format_downloads() == "42 downloads"
+
+
+def test_format_downloads_singular():
+    r = Release.from_github_api(_release_data(assets=[_asset_data(download_count=1)]))
+    assert r.format_downloads() == "1 download"
+
+
+def test_format_downloads_zero_is_plural():
+    r = Release.from_github_api(_release_data(assets=[_asset_data(download_count=0)]))
+    assert r.format_downloads() == "0 downloads"
