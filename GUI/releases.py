@@ -184,6 +184,8 @@ class ReleasesDialog(wx.Dialog):
         if release.published_at:
             lines.append(f"Published: {release.published_at.strftime('%Y-%m-%d %H:%M')}")
         lines.append(f"Assets: {len(release.assets)}")
+        if release.assets:
+            lines.append(f"Downloads: {release.total_downloads}")
 
         if release.body:
             lines.append("")
@@ -302,6 +304,8 @@ class ViewReleaseDialog(wx.Dialog):
             lines.append(f"Published: {r.published_at.strftime('%Y-%m-%d %H:%M:%S')}")
         elif r.created_at:
             lines.append(f"Created: {r.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if r.assets:
+            lines.append(f"Downloads: {r.total_downloads} across {len(r.assets)} assets")
 
         sep = "\r\n" if platform.system() != "Darwin" else "\n"
         self.info_text.SetValue(sep.join(lines))

@@ -158,12 +158,28 @@ class Release:
             labels.append("Pre-release")
         return ", ".join(labels) if labels else "Release"
 
+    @property
+    def total_downloads(self) -> int:
+        """Total downloads across every asset in this release."""
+        return sum(asset.download_count for asset in self.assets)
+
+    def format_downloads(self) -> str:
+        """Format the release's total download count for display."""
+        total = self.total_downloads
+        return f"{total} downloads" if total != 1 else "1 download"
+
     def format_display(self) -> str:
         """Format release for display in list."""
         time_str = self._format_relative_time()
         status = self.get_status_label()
         asset_count = len(self.assets)
         assets_str = f"{asset_count} assets" if asset_count != 1 else "1 asset"
+        # Downloads are only mentioned when there is something to download. A
+        # release with no assets would otherwise always read "0 assets, 0
+        # downloads", which is noise on the many releases that carry only the
+        # auto-generated source archives (those are not assets and are never counted).
+        if self.assets:
+            assets_str = f"{assets_str}, {self.format_downloads()}"
 
         if self.name != self.tag_name:
             return f"{self.tag_name}: {self.name} - {status} ({assets_str}) - {time_str}"
