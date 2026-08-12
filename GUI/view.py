@@ -799,7 +799,10 @@ class ViewRepoDialog(wx.Dialog):
         self._render_details()
 
     def on_close(self, event):
-        self.Destroy()
+        # Let ShowModal() unwind its native modal event loop before the caller
+        # destroys the dialog. Destroying it here leaves Cocoa's modal stack in
+        # a stale state and the next modal dialog can crash in wxDialog.
+        self.EndModal(wx.ID_CANCEL)
 
 
 def open_upstream_repo(parent_window, account, repo, on_finally=None):
