@@ -568,3 +568,82 @@ def test_download_artifact_removes_partial_file_on_stream_error(tmp_path):
     assert ok is False
     # The truncated file must not be left behind.
     assert not dest.exists()
+
+
+# ---------------------------------------------------------------------------
+# get_commits — paged loading
+# ---------------------------------------------------------------------------
+
+
+def _commit_payload(sha="abc1234"):
+    return {
+        "sha": sha,
+        "html_url": f"https://github.com/alice/MyRepo/commit/{sha}",
+        "commit": {
+            "message": f"Commit {sha}",
+            "author": {"name": "Alice", "email": "a@example.com",
+                       "date": "2026-01-01T00:00:00Z"},
+            "committer": {"name": "Alice", "email": "a@example.com",
+                          "date": "2026-01-01T00:00:00Z"},
+        },
+        "parents": [],
+    }
+
+
+def _commits_response(count, links=None, status=200):
+    r = _response(status, [_commit_payload(f"sha{i}") for i in range(count)])
+    r.links = links or {}
+    return r
+
+
+def test_get_commits_requests_one_page():
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(50)
+
+    commits, has_more = acc.get_commits("alice", "MyRepo", sha="dev", page=2)
+
+    assert len(commits) == 50
+    assert acc._session.get.call_count == 1
+    _, kwargs = acc._session.get.call_args
+    assert kwargs["params"] == {"per_page": 50, "page": 2, "sha": "dev"}
+
+
+def test_get_commits_has_more_from_next_link():
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(50, links={"next": {"url": "..."}})
+    assert acc.get_commits("alice", "MyRepo")[1] is True
+
+
+def test_get_commits_no_more_when_link_header_says_last_page():
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(50, links={"prev": {"url": "..."}})
+    assert acc.get_commits("alice", "MyRepo")[1] is False
+
+
+def test_get_commits_full_page_without_link_header_keeps_paging():
+    # No Link header at all: fall back to "a full page probably means more".
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(50)
+    assert acc.get_commits("alice", "MyRepo")[1] is True
+
+
+def test_get_commits_partial_page_means_no_more():
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(12)
+    commits, has_more = acc.get_commits("alice", "MyRepo")
+    assert len(commits) == 12
+    assert has_more is False
+
+
+def test_get_commits_empty_on_http_error():
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(0, status=404)
+    assert acc.get_commits("alice", "MyRepo") == ([], False)
+
+
+def test_get_commits_omits_sha_when_not_given():
+    acc = _make_account()
+    acc._session.get.return_value = _commits_response(1)
+    acc.get_commits("alice", "MyRepo")
+    _, kwargs = acc._session.get.call_args
+    assert "sha" not in kwargs["params"]

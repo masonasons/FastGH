@@ -5,6 +5,7 @@ import webbrowser
 import platform
 import threading
 from application import get_app
+from github_api import COMMITS_PER_PAGE
 from models.repository import Repository
 from models.commit import Commit
 from . import theme
@@ -26,6 +27,13 @@ class CommitsDialog(wx.Dialog):
         self.current_branch = None
         self.initial_load = True  # Track first load for focus
         self._open_view_dialog = None
+
+        # Incremental loading state
+        self.next_page = 1  # Next page of commits to request
+        self.has_more = False  # Whether another page is available
+        self.loading = False  # A page request is in flight
+        self.load_token = 0  # Invalidates responses from a previous branch/refresh
+        self._status_shown = False  # A status entry is appended after the commits
 
         title = f"Commits - {repo.full_name}"
         wx.Dialog.__init__(self, parent, title=title, size=(900, 600))
@@ -200,39 +208,87 @@ class CommitsDialog(wx.Dialog):
             pass  # Dialog was destroyed
 
     def load_commits(self):
-        """Load commits in background."""
+        """Load the first page of commits for the selected branch."""
         try:
-            self.commits_list.Clear()
-            self.commits_list.Append("Loading...")
+            # Any page still in flight belongs to the previous branch/refresh
+            self.load_token += 1
             self.commits = []
+            self.next_page = 1
+            self.has_more = False
+            self.loading = False
+            self._status_shown = False
+
+            self.commits_list.Clear()
             self.details_text.SetValue("")
 
             branch = self.branch_choice.GetStringSelection()
-            if not branch or branch == "(no branches)":
-                self.commits_list.Clear()
+            if not branch or branch in ("(no branches)", "(no matching branches)"):
                 self.commits_list.Append("No branch selected")
+                self.update_buttons()
                 return
 
-            def do_load():
-                max_commits = self.app.prefs.commit_limit
-                commits = self.account.get_commits(self.owner, self.repo_name, sha=branch, max_commits=max_commits)
-                wx.CallAfter(self.update_list, commits)
-
-            threading.Thread(target=do_load, daemon=True).start()
+            self.current_branch = branch
+            self._append_status("Loading...")
+            self._fetch_page(branch)
         except RuntimeError:
             pass  # Dialog was destroyed
 
-    def update_list(self, commits):
-        """Update the commits list."""
-        try:
-            self.commits = commits
-            self.commits_list.Clear()
+    def _fetch_page(self, branch):
+        """Fetch the next page of commits in background."""
+        self.loading = True
+        page = self.next_page
+        token = self.load_token
 
-            if not commits:
-                self.commits_list.Append("No commits found")
-            else:
-                for commit in commits:
-                    self.commits_list.Append(commit.format_display())
+        def do_load():
+            commits, has_more = self.account.get_commits(
+                self.owner, self.repo_name, sha=branch,
+                page=page, per_page=COMMITS_PER_PAGE
+            )
+            wx.CallAfter(self.update_list, token, commits, has_more)
+
+        threading.Thread(target=do_load, daemon=True).start()
+
+    def _append_status(self, text):
+        """Append a status entry after the commits."""
+        self.commits_list.Append(text)
+        self._status_shown = True
+
+    def _remove_status(self):
+        """Remove the trailing status entry; returns True if it was selected."""
+        if not self._status_shown:
+            return False
+
+        self._status_shown = False
+        last = self.commits_list.GetCount() - 1
+        was_selected = self.commits_list.GetSelection() == last
+        if last >= 0:
+            self.commits_list.Delete(last)
+        return was_selected
+
+    def update_list(self, token, commits, has_more):
+        """Append a loaded page of commits to the list."""
+        try:
+            if token != self.load_token:
+                return  # Stale page from a previous branch or refresh
+
+            self.loading = False
+            self.next_page += 1
+            self.has_more = has_more
+
+            first_new = len(self.commits)
+            was_on_status = self._remove_status()
+
+            for commit in commits:
+                self.commits_list.Append(commit.format_display())
+            self.commits.extend(commits)
+
+            if not self.commits:
+                self._append_status("No commits found")
+            elif was_on_status and commits:
+                # The user had arrowed onto the loading entry - land them on the
+                # first commit of the page they were waiting for.
+                self.commits_list.SetSelection(first_new)
+                self.on_selection_change(None)
 
             # Focus on commits list only on initial load
             if self.initial_load:
@@ -242,6 +298,18 @@ class CommitsDialog(wx.Dialog):
             self.update_buttons()
         except RuntimeError:
             pass  # Dialog was destroyed
+
+    def _maybe_load_more(self):
+        """Load the next page once the selection reaches the end of the list."""
+        if self.loading or not self.has_more or not self.commits:
+            return
+
+        selection = self.commits_list.GetSelection()
+        if selection == wx.NOT_FOUND or selection < len(self.commits) - 1:
+            return
+
+        self._append_status("Loading more commits...")
+        self._fetch_page(self.current_branch)
 
     def update_buttons(self):
         """Update button states based on selection."""
@@ -316,6 +384,7 @@ class CommitsDialog(wx.Dialog):
         commit = self.get_selected_commit()
         if commit:
             self.show_commit_preview(commit)
+        self._maybe_load_more()
 
     def show_commit_preview(self, commit: Commit):
         """Show commit preview in details text."""

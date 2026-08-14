@@ -76,9 +76,6 @@ class Application:
             "$full_name$ - $description$ | Stars: $stars$ | Forks: $forks$ | Issues: $open_issues$ | $language$ | Updated $updated_at$"
         )
 
-        # Commit limit (0 = all)
-        self.prefs.commit_limit = self.prefs.get("commit_limit", 0)
-
         # Download location (default to user's Downloads folder)
         import os
         default_downloads = os.path.join(os.path.expanduser("~"), "Downloads")

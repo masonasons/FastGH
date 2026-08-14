@@ -26,6 +26,9 @@ GITHUB_CLIENT_ID = "Ov23liErbWGLzAKTlLFW"  # Replace with your client ID
 # GitHub API base URL
 GITHUB_API_URL = "https://api.github.com"
 
+# Number of commits fetched per API call when paging through a repo's history
+COMMITS_PER_PAGE = 50
+
 
 class AccountSetupCancelled(Exception):
     """Raised when user cancels account setup."""
@@ -1007,23 +1010,20 @@ class GitHubAccount:
 
     # ============ Commits API ============
 
-    def get_commits(self, owner: str, repo: str, sha: str = None, per_page: int = 100, max_commits: int = 0) -> list[Commit]:
-        """Get commits for a repository.
+    def get_commits(self, owner: str, repo: str, sha: str = None, page: int = 1,
+                    per_page: int = COMMITS_PER_PAGE) -> tuple[list[Commit], bool]:
+        """Get a single page of commits for a repository.
 
         Args:
             owner: Repository owner
             repo: Repository name
             sha: SHA or branch to start listing commits from (default: default branch)
+            page: 1-based page number to fetch
             per_page: Number of commits per page
-            max_commits: Maximum number of commits to return (0 = all)
+
+        Returns:
+            (commits, has_more) where has_more is True if another page is available.
         """
-        commits = []
-        page = 1
-
-        # Optimize per_page if max_commits is set and smaller
-        if max_commits > 0 and max_commits < per_page:
-            per_page = max_commits
-
         params = {
             "per_page": per_page,
             "page": page
@@ -1031,32 +1031,22 @@ class GitHubAccount:
         if sha:
             params["sha"] = sha
 
-        while True:
-            params["page"] = page
-            response = self._session.get(
-                f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits",
-                params=params
-            )
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits",
+            params=params
+        )
 
-            if response.status_code != 200:
-                break
+        if response.status_code != 200:
+            return [], False
 
-            data = response.json()
-            if not data:
-                break
+        data = response.json() or []
+        commits = [Commit.from_github_api(item) for item in data]
 
-            for item in data:
-                commits.append(Commit.from_github_api(item))
-                # Check if we've reached the limit
-                if max_commits > 0 and len(commits) >= max_commits:
-                    return commits
+        # GitHub sends a rel="next" link while more pages remain; fall back to a
+        # full page meaning there is probably more.
+        has_more = "next" in response.links if response.links else len(data) == per_page
 
-            if len(data) < per_page:
-                break
-
-            page += 1
-
-        return commits
+        return commits, has_more
 
     def get_commit(self, owner: str, repo: str, sha: str) -> Commit | None:
         """Get a single commit by SHA."""

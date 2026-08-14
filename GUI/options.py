@@ -128,22 +128,6 @@ class OptionsDialog(wx.Dialog):
         """Build the General settings tab content."""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Commits section
-        commits_box = wx.StaticBox(panel, label="Commits")
-        commits_sizer = wx.StaticBoxSizer(commits_box, wx.VERTICAL)
-
-        limit_row = wx.BoxSizer(wx.HORIZONTAL)
-        limit_label = wx.StaticText(panel, label="Commit &limit when loading:")
-        limit_row.Add(limit_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-        self.limit_spin = wx.SpinCtrl(panel, min=0, max=5000, initial=0, style=wx.SP_ARROW_KEYS)
-        self.limit_spin.SetToolTip("Number of commits to load (0 = all commits)")
-        limit_row.Add(self.limit_spin, 0, wx.RIGHT, 10)
-        limit_hint = wx.StaticText(panel, label="(0 = all)")
-        limit_row.Add(limit_hint, 0, wx.ALIGN_CENTER_VERTICAL)
-        commits_sizer.Add(limit_row, 0, wx.ALL | wx.EXPAND, 10)
-
-        main_sizer.Add(commits_sizer, 0, wx.EXPAND | wx.ALL, 10)
-
         # Downloads section
         downloads_box = wx.StaticBox(panel, label="Downloads")
         downloads_sizer = wx.StaticBoxSizer(downloads_box, wx.VERTICAL)
@@ -468,7 +452,6 @@ class OptionsDialog(wx.Dialog):
 
     def load_settings(self):
         """Load current settings into the dialog."""
-        self.limit_spin.SetValue(self.app.prefs.commit_limit)
         self.download_path.SetValue(self.app.prefs.download_location)
         self.git_path.SetValue(self.app.prefs.git_path)
         self.git_org_structure_cb.SetValue(self.app.prefs.git_use_org_structure)
@@ -526,7 +509,6 @@ class OptionsDialog(wx.Dialog):
 
     def save_settings(self):
         """Save settings from the dialog."""
-        self.app.prefs.commit_limit = self.limit_spin.GetValue()
         self.app.prefs.download_location = self.download_path.GetValue()
         self.app.prefs.git_path = self.git_path.GetValue()
         self.app.prefs.git_use_org_structure = self.git_org_structure_cb.GetValue()
