@@ -308,6 +308,8 @@ class MainGui(wx.Frame):
         m_copy_clone = actions_menu.Append(-1, self._menu_label("Copy Clone URL", "Ctrl+Shift+C"), "Copy git clone URL")
         self.Bind(wx.EVT_MENU, self.on_copy_clone, m_copy_clone)
         actions_menu.AppendSeparator()
+        m_view_files = actions_menu.Append(-1, self._menu_label("View Files", "Ctrl+Shift+F"), "Browse repository files")
+        self.Bind(wx.EVT_MENU, self.on_view_files, m_view_files)
         m_view_issues = actions_menu.Append(-1, self._menu_label("View Issues", "Ctrl+I"), "View repository issues")
         self.Bind(wx.EVT_MENU, self.on_view_issues, m_view_issues)
         m_view_prs = actions_menu.Append(-1, self._menu_label("View Pull Requests", "Ctrl+P"), "View pull requests")
@@ -678,6 +680,9 @@ class MainGui(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_copy_clone, m_copy_clone)
 
         menu.AppendSeparator()
+
+        m_files = menu.Append(-1, "View &Files")
+        self.Bind(wx.EVT_MENU, self.on_view_files, m_files)
 
         m_issues = menu.Append(-1, "View &Issues")
         self.Bind(wx.EVT_MENU, self.on_view_issues, m_issues)
@@ -1568,9 +1573,33 @@ class MainGui(wx.Frame):
         dlg.ShowModal()
         dlg.Destroy()
 
+    def _get_selected_username(self) -> str:
+        """Username related to the focused list item, used to prefill lookups."""
+        page = self.notebook.GetSelection()
+        # Tab indices: 0=Feed, 1=Repos, 2=Starred, 3=Watched, 4=Following, 5=Notifications
+        if page in (1, 2, 3):
+            repo = self.get_selected_repo()
+            return repo.owner if repo else ""
+        if page == 0:
+            feed_event = self.get_selected_feed_event()
+            if feed_event and "/" in feed_event.repo.name:
+                return feed_event.repo.name.split("/")[0]
+        elif page == 4:
+            user = self.get_selected_following_user()
+            return user.login if user else ""
+        elif page == 5:
+            notification = self.get_selected_notification()
+            return notification.repository_owner if notification else ""
+        return ""
+
     def on_view_user(self, event):
         """View a user profile by username."""
-        dlg = wx.TextEntryDialog(self._get_dialog_parent(), "Enter GitHub username:", "View User Profile")
+        dlg = wx.TextEntryDialog(
+            self._get_dialog_parent(),
+            "Enter GitHub username:",
+            "View User Profile",
+            self._get_selected_username()
+        )
         if dlg.ShowModal() == wx.ID_OK:
             username = dlg.GetValue().strip()
             if username:
@@ -1667,6 +1696,15 @@ class MainGui(wx.Frame):
     def _get_dialog_parent(self):
         """Get parent for dialogs - None on macOS to avoid menu issues."""
         return None if platform.system() == "Darwin" else self
+
+    def on_view_files(self, event):
+        """Open file browser dialog."""
+        repo = self.get_selected_repo()
+        if repo:
+            from GUI.files import FileBrowserDialog
+            dlg = FileBrowserDialog(self._get_dialog_parent(), repo)
+            dlg.ShowModal()
+            dlg.Destroy()
 
     def on_view_issues(self, event):
         """Open issues dialog."""

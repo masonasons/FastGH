@@ -2,6 +2,7 @@
 
 import wx
 from application import get_app
+from .wx_safety import is_enter_key
 
 
 class AccountsDialog(wx.Dialog):
@@ -48,7 +49,7 @@ class AccountsDialog(wx.Dialog):
         panel.SetSizer(main_sizer)
 
         # Keyboard shortcuts
-        self.account_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+        self.account_list.Bind(wx.EVT_CHAR_HOOK, self.on_key)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
 
     def load_accounts(self):
@@ -130,10 +131,9 @@ class AccountsDialog(wx.Dialog):
 
     def on_key(self, event):
         """Handle key events in list."""
-        key = event.GetKeyCode()
-        if key == wx.WXK_RETURN:
+        if is_enter_key(event):
             self.on_switch(None)
-        elif key == wx.WXK_DELETE:
+        elif event.GetKeyCode() == wx.WXK_DELETE:
             self.on_remove(None)
         else:
             event.Skip()

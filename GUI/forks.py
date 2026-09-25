@@ -5,6 +5,7 @@ import threading
 from application import get_app
 from models.repository import Repository
 from . import theme
+from .wx_safety import is_enter_key, run_key_action
 
 
 class ForksDialog(wx.Dialog):
@@ -63,7 +64,7 @@ class ForksDialog(wx.Dialog):
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self.on_char_hook)
         self.forks_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view_fork)
-        self.forks_list.Bind(wx.EVT_KEY_DOWN, self.on_list_key)
+        self.forks_list.Bind(wx.EVT_CHAR_HOOK, self.on_list_key)
         self.view_btn.Bind(wx.EVT_BUTTON, self.on_view_fork)
         self.refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
@@ -77,8 +78,8 @@ class ForksDialog(wx.Dialog):
 
     def on_list_key(self, event):
         """Handle key events in the list."""
-        if event.GetKeyCode() == wx.WXK_RETURN:
-            self.on_view_fork(None)
+        if is_enter_key(event):
+            run_key_action(self.on_view_fork)
         else:
             event.Skip()
 

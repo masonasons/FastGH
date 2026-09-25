@@ -8,6 +8,7 @@ from application import get_app
 from models.repository import Repository
 from models.issue import PullRequest, Comment
 from . import theme
+from .wx_safety import is_enter_key, run_key_action
 from .issues import CommentDialog
 
 
@@ -100,7 +101,7 @@ class PullRequestsDialog(wx.Dialog):
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
         self.pr_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.pr_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
-        self.pr_list.Bind(wx.EVT_KEY_DOWN, self.on_key)
+        self.pr_list.Bind(wx.EVT_CHAR_HOOK, self.on_key)
 
     def on_char_hook(self, event):
         """Handle key events."""
@@ -260,9 +261,8 @@ class PullRequestsDialog(wx.Dialog):
 
     def on_key(self, event):
         """Handle key events."""
-        key = event.GetKeyCode()
-        if key == wx.WXK_RETURN:
-            self.on_view(None)
+        if is_enter_key(event):
+            run_key_action(self.on_view)
         else:
             event.Skip()
 
