@@ -699,6 +699,9 @@ class MainGui(wx.Frame):
         m_releases = menu.Append(-1, "View &Releases")
         self.Bind(wx.EVT_MENU, self.on_view_releases, m_releases)
 
+        m_stargazers = menu.Append(-1, "View &Stargazers")
+        self.Bind(wx.EVT_MENU, self.on_view_stargazers, m_stargazers)
+
         # Only offered for forks; upstream navigation is meaningless otherwise.
         if getattr(repo, "is_fork", False):
             m_upstream = menu.Append(-1, "View &Upstream")
@@ -1755,6 +1758,15 @@ class MainGui(wx.Frame):
         if repo:
             from GUI.releases import ReleasesDialog
             dlg = ReleasesDialog(self._get_dialog_parent(), repo)
+            dlg.ShowModal()
+            dlg.Destroy()
+
+    def on_view_stargazers(self, event):
+        """Open stargazers dialog."""
+        repo = self.get_selected_repo()
+        if repo:
+            from GUI.stargazers import StargazersDialog
+            dlg = StargazersDialog(self._get_dialog_parent(), repo)
             dlg.ShowModal()
             dlg.Destroy()
 

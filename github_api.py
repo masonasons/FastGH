@@ -10,7 +10,7 @@ import wx
 from models.repository import Repository
 from models.issue import Issue, PullRequest, Comment
 from models.commit import Commit
-from models.user import UserProfile
+from models.user import UserProfile, Stargazer
 from models.workflow import Workflow, WorkflowRun, WorkflowJob, Artifact
 from models.release import Release, ReleaseAsset
 from models.notification import Notification
@@ -28,6 +28,9 @@ GITHUB_API_URL = "https://api.github.com"
 
 # Number of commits fetched per API call when paging through a repo's history
 COMMITS_PER_PAGE = 50
+
+# Number of stargazers fetched per API call (the API maximum)
+STARGAZERS_PER_PAGE = 100
 
 
 class AccountSetupCancelled(Exception):
@@ -2137,6 +2140,43 @@ class GitHubAccount:
         if response.status_code == 200:
             return response.text
         return None
+
+    # ============ Stargazers API ============
+
+    def get_stargazers(self, owner: str, repo: str, page: int = 1,
+                       per_page: int = STARGAZERS_PER_PAGE) -> tuple[list[Stargazer], bool]:
+        """Get a single page of users who starred a repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            page: 1-based page number to fetch
+            per_page: Number of stargazers per page
+
+        Returns:
+            (stargazers, has_more) where has_more is True if another page is available.
+        """
+        response = self._session.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/stargazers",
+            params={
+                "per_page": per_page,
+                "page": page
+            },
+            # The star media type adds when each user starred the repo
+            headers={"Accept": "application/vnd.github.star+json"}
+        )
+
+        if response.status_code != 200:
+            return [], False
+
+        data = response.json() or []
+        stargazers = [Stargazer.from_github_api(item) for item in data]
+
+        # GitHub sends a rel="next" link while more pages remain; fall back to a
+        # full page meaning there is probably more.
+        has_more = "next" in response.links if response.links else len(data) == per_page
+
+        return stargazers, has_more
 
     # ============ Forks API ============
 

@@ -9,6 +9,7 @@ from models.repository import Repository
 from models.user import UserProfile
 from . import theme
 from .wx_safety import is_enter_key, run_key_action
+from .repo_actions import RepoActionButtons
 
 
 class SearchDialog(wx.Dialog):
@@ -69,6 +70,10 @@ class SearchDialog(wx.Dialog):
         self.results_list = wx.ListBox(self.panel, style=wx.LB_SINGLE)
         main_sizer.Add(self.results_list, 1, wx.EXPAND | wx.ALL, 10)
 
+        # Repository actions - only shown when searching repositories
+        self.repo_actions = RepoActionButtons(self, self.panel, self.get_selected_repo)
+        main_sizer.Add(self.repo_actions.sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
         # Action buttons
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -102,6 +107,7 @@ class SearchDialog(wx.Dialog):
         self.results_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view)
         self.results_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.results_list.Bind(wx.EVT_CHAR_HOOK, self.on_key)
+        self.results_list.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
 
     def on_char_hook(self, event):
         """Handle key events."""
@@ -110,10 +116,29 @@ class SearchDialog(wx.Dialog):
         else:
             event.Skip()
 
+    def on_context_menu(self, event):
+        """Show context menu for the selected result."""
+        item = self.get_selected_item()
+        if isinstance(item, Repository):
+            self.repo_actions.show_menu(self, [
+                ("&View Repository", self.on_view),
+                ("Open in &Browser", self.on_open_browser),
+            ])
+        elif item:
+            menu = wx.Menu()
+            m_view = menu.Append(-1, "&View Profile")
+            self.Bind(wx.EVT_MENU, self.on_view, m_view)
+            m_open = menu.Append(-1, "Open in &Browser")
+            self.Bind(wx.EVT_MENU, self.on_open_browser, m_open)
+            self.PopupMenu(menu)
+            menu.Destroy()
+
     def on_type_change(self, event):
         """Handle search type change."""
         idx = self.type_choice.GetSelection()
         self.search_type = "repos" if idx == 0 else "users"
+        self.repo_actions.show(self.search_type == "repos")
+        self.panel.Layout()
 
         # Update sort options based on type
         self.sort_choice.Clear()
@@ -194,6 +219,7 @@ class SearchDialog(wx.Dialog):
         has_selection = self.results_list.GetSelection() != wx.NOT_FOUND and len(self.results) > 0
         self.view_btn.Enable(has_selection)
         self.open_browser_btn.Enable(has_selection)
+        self.repo_actions.enable(self.get_selected_repo() is not None)
 
     def get_selected_item(self):
         """Get the currently selected item."""
@@ -201,6 +227,11 @@ class SearchDialog(wx.Dialog):
         if selection != wx.NOT_FOUND and selection < len(self.results):
             return self.results[selection]
         return None
+
+    def get_selected_repo(self) -> Repository | None:
+        """Get the selected result if it is a repository."""
+        item = self.get_selected_item()
+        return item if isinstance(item, Repository) else None
 
     def on_view(self, event):
         """View selected item."""
@@ -285,6 +316,12 @@ class UserProfileDialog(wx.Dialog):
         self.repos_list = wx.ListBox(self.panel, style=wx.LB_SINGLE)
         main_sizer.Add(self.repos_list, 1, wx.EXPAND | wx.ALL, 10)
 
+        # Repository actions - every listed repo is owned by this user
+        self.repo_actions = RepoActionButtons(
+            self, self.panel, self.get_selected_repo, include_owner=False
+        )
+        main_sizer.Add(self.repo_actions.sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
         # Action buttons
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -325,6 +362,7 @@ class UserProfileDialog(wx.Dialog):
         self.repos_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_view_repo)
         self.repos_list.Bind(wx.EVT_LISTBOX, self.on_selection_change)
         self.repos_list.Bind(wx.EVT_CHAR_HOOK, self.on_key)
+        self.repos_list.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
 
     def on_char_hook(self, event):
         """Handle key events."""
@@ -332,6 +370,13 @@ class UserProfileDialog(wx.Dialog):
             self.on_close(None)
         else:
             event.Skip()
+
+    def on_context_menu(self, event):
+        """Show context menu for the selected repository."""
+        self.repo_actions.show_menu(self, [
+            ("&View Repository", self.on_view_repo),
+            ("Open in &Browser", self.on_open_repo),
+        ])
 
     def load_user(self):
         """Load user data in background."""
@@ -425,6 +470,7 @@ class UserProfileDialog(wx.Dialog):
         has_repo_selection = self.repos_list.GetSelection() != wx.NOT_FOUND and len(self.repos) > 0
         self.view_repo_btn.Enable(has_repo_selection)
         self.open_repo_btn.Enable(has_repo_selection)
+        self.repo_actions.enable(has_repo_selection)
         self.open_profile_btn.Enable(self.user is not None)
 
     def get_selected_repo(self) -> Repository | None:

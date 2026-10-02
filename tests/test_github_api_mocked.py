@@ -647,3 +647,54 @@ def test_get_commits_omits_sha_when_not_given():
     acc.get_commits("alice", "MyRepo")
     _, kwargs = acc._session.get.call_args
     assert "sha" not in kwargs["params"]
+
+
+# ---------------------------------------------------------------------------
+# get_stargazers — paged loading
+# ---------------------------------------------------------------------------
+
+
+def _stargazers_response(count, links=None, status=200):
+    r = _response(status, [
+        {"starred_at": "2026-01-01T00:00:00Z",
+         "user": {"login": f"user{i}", "html_url": f"https://github.com/user{i}"}}
+        for i in range(count)
+    ])
+    r.links = links or {}
+    return r
+
+
+def test_get_stargazers_requests_one_page_with_star_media_type():
+    acc = _make_account()
+    acc._session.get.return_value = _stargazers_response(100)
+
+    stargazers, has_more = acc.get_stargazers("alice", "MyRepo", page=3)
+
+    assert len(stargazers) == 100
+    assert stargazers[0].login == "user0"
+    assert stargazers[0].starred_at is not None
+    assert has_more is True
+    args, kwargs = acc._session.get.call_args
+    assert args[0] == f"{GITHUB_API_URL}/repos/alice/MyRepo/stargazers"
+    assert kwargs["params"] == {"per_page": 100, "page": 3}
+    assert kwargs["headers"] == {"Accept": "application/vnd.github.star+json"}
+
+
+def test_get_stargazers_no_more_when_link_header_says_last_page():
+    acc = _make_account()
+    acc._session.get.return_value = _stargazers_response(100, links={"prev": {"url": "..."}})
+    assert acc.get_stargazers("alice", "MyRepo")[1] is False
+
+
+def test_get_stargazers_partial_page_means_no_more():
+    acc = _make_account()
+    acc._session.get.return_value = _stargazers_response(7)
+    stargazers, has_more = acc.get_stargazers("alice", "MyRepo")
+    assert len(stargazers) == 7
+    assert has_more is False
+
+
+def test_get_stargazers_empty_on_http_error():
+    acc = _make_account()
+    acc._session.get.return_value = _stargazers_response(0, status=404)
+    assert acc.get_stargazers("alice", "MyRepo") == ([], False)

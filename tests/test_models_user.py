@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from models.user import UserProfile
+from models.user import UserProfile, Stargazer
 
 
 # ---------------------------------------------------------------------------
@@ -291,3 +291,36 @@ def test_user_relative_time_plural_years():
 def test_user_relative_time_none_returns_unknown():
     p = UserProfile.from_github_api(_profile_data())
     assert p._format_relative_time(None) == "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# Stargazer
+# ---------------------------------------------------------------------------
+
+
+def test_stargazer_from_star_media_type():
+    s = Stargazer.from_github_api({
+        "starred_at": "2026-01-02T03:04:05Z",
+        "user": {"login": "bob", "html_url": "https://github.com/bob", "type": "User"},
+    })
+    assert s.login == "bob"
+    assert s.html_url == "https://github.com/bob"
+    assert s.starred_at == datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+
+def test_stargazer_from_bare_user():
+    s = Stargazer.from_github_api({"login": "bob", "html_url": "https://github.com/bob"})
+    assert s.login == "bob"
+    assert s.type == "User"
+    assert s.starred_at is None
+    assert s.format_display() == "bob"
+
+
+def test_stargazer_display_includes_relative_star_time():
+    s = Stargazer("bob", "", "User", datetime.now(timezone.utc) - timedelta(days=3))
+    assert s.format_display() == "bob - starred 3 days ago"
+
+
+def test_stargazer_invalid_timestamp_is_none():
+    s = Stargazer.from_github_api({"starred_at": "not a date", "user": {"login": "bob"}})
+    assert s.starred_at is None

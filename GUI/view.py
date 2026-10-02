@@ -312,6 +312,9 @@ class ViewRepoDialog(wx.Dialog):
         self.forks_btn = wx.Button(self.panel, -1, "View F&orks")
         btn_row2.Add(self.forks_btn, 0, wx.RIGHT, 5)
 
+        self.stargazers_btn = wx.Button(self.panel, -1, "View Stargaz&ers")
+        btn_row2.Add(self.stargazers_btn, 0, wx.RIGHT, 5)
+
         self.owner_btn = wx.Button(self.panel, -1, "View O&wner")
         btn_row2.Add(self.owner_btn, 0, wx.RIGHT, 5)
 
@@ -371,6 +374,7 @@ class ViewRepoDialog(wx.Dialog):
         self.actions_btn.Bind(wx.EVT_BUTTON, self.on_view_actions)
         self.releases_btn.Bind(wx.EVT_BUTTON, self.on_view_releases)
         self.forks_btn.Bind(wx.EVT_BUTTON, self.on_view_forks)
+        self.stargazers_btn.Bind(wx.EVT_BUTTON, self.on_view_stargazers)
         self.owner_btn.Bind(wx.EVT_BUTTON, self.on_view_owner)
         self.upstream_btn.Bind(wx.EVT_BUTTON, self.on_view_upstream)
         self.close_btn.Bind(wx.EVT_BUTTON, self.on_close)
@@ -772,6 +776,13 @@ class ViewRepoDialog(wx.Dialog):
         """Open forks dialog."""
         from GUI.forks import ForksDialog
         dlg = ForksDialog(self, self.repo)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def on_view_stargazers(self, event):
+        """Open stargazers dialog."""
+        from GUI.stargazers import StargazersDialog
+        dlg = StargazersDialog(self, self.repo)
         dlg.ShowModal()
         dlg.Destroy()
 
