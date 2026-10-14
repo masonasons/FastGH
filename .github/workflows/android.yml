@@ -1,0 +1,103 @@
+name: Android
+
+# The Android app (android/), in Kotlin and Jetpack Compose. Every push to master
+# that changes it runs its unit tests, builds the APK and puts it on the "latest"
+# release as FastGH.apk.
+#
+# Signing needs these repository secrets: ANDROID_KEYSTORE_B64 (the release
+# keystore, base64), ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and
+# ANDROID_KEY_PASSWORD. Without them the APK is signed with a debug key, built
+# but not released.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'android/**'
+      - 'version.py'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # every commit: their count is the build number
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode the release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+            echo "SIGNED=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Test and build the APK
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk FastGH.apk
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FastGH-Android
+          path: android/FastGH.apk
+          if-no-files-found: error
+
+      # build.yml recreates the release when a push also changes the desktop app:
+      # wait for it, so the APK goes on the new release rather than the old one.
+      - name: Wait for the desktop build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && env.SIGNED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --commit "$GITHUB_SHA" \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ]; then
+            gh run watch "$run_id" -R "$GITHUB_REPOSITORY" --interval 30 > /dev/null || true
+          fi
+
+      # Only a signed build goes out: one signed with a debug key could not be
+      # updated by the next. The release may be gone for a moment while build.yml
+      # recreates it: tried again a few times.
+      - name: Attach the APK to the latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && env.SIGNED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            gh release upload latest android/FastGH.apk -R "$GITHUB_REPOSITORY" --clobber && exit 0
+            sleep 30
+          done
+          exit 1

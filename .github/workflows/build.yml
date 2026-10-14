@@ -3,6 +3,10 @@ name: Build
 on:
   push:
     branches: [master]
+    # The Android app is built and released by android.yml
+    paths-ignore:
+      - 'android/**'
+      - '.github/workflows/android.yml'
   workflow_dispatch:  # Allow manual trigger
 
 permissions:
@@ -107,6 +111,13 @@ jobs:
       - name: List artifacts
         run: ls -la artifacts/
 
+      # The Android APK is built by android.yml, only when the app's code changes:
+      # the one on the release now goes on the new one.
+      - name: Keep the Android APK
+        run: gh release download latest -p FastGH.apk -D artifacts/ || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Delete existing latest release
         run: gh release delete latest --yes --cleanup-tag || true
         env:
@@ -129,6 +140,7 @@ jobs:
             ## Downloads
             - **Windows:** FastGH-${{ steps.version.outputs.version }}-Windows.zip
             - **macOS:** FastGH-${{ steps.version.outputs.version }}.dmg
+            - **Android:** FastGH.apk (Android 8 or later)
           files: artifacts/*
           prerelease: true
           make_latest: false
