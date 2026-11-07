@@ -169,6 +169,8 @@ MainFrame::MainFrame() : wxFrame(nullptr, wxID_ANY, APP_NAME, wxDefaultPosition,
 #ifdef __WXMSW__
     m_tray = std::make_unique<TrayIcon>(this);
 #endif
+    platform::SetMenuBarActions({[this] { ShowWindow(); }, [this] { RefreshAll(); },
+                                 [this] { CallAfter([this] { Exit(); }); }});
     ApplyOptions();
     SetGlobalHotkey(app::Prefs().GetString("global_hotkey"));
 }

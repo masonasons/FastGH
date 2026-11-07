@@ -15,6 +15,79 @@ EventHotKeyRef g_hotKey = nullptr;
 EventHandlerRef g_handler = nullptr;
 std::function<void()> g_callback;
 
+platform::MenuBarActions g_menuActions;
+NSStatusItem* g_statusItem = nil;
+
+}  // namespace
+
+// The menu bar icon's menu items call back into the main window.
+@interface FastGHStatusTarget : NSObject
+- (void)show:(id)sender;
+- (void)refresh:(id)sender;
+- (void)quit:(id)sender;
+@end
+
+@implementation FastGHStatusTarget
+- (void)show:(id)sender {
+    if (g_menuActions.show) g_menuActions.show();
+}
+- (void)refresh:(id)sender {
+    if (g_menuActions.refresh) g_menuActions.refresh();
+}
+- (void)quit:(id)sender {
+    if (g_menuActions.quit) g_menuActions.quit();
+}
+@end
+
+namespace {
+
+FastGHStatusTarget* g_statusTarget = nil;
+
+// The G mark as a template image, so the menu bar draws it in its own colours.
+NSImage* StatusImage() {
+    NSImage* image = [NSImage imageWithSize:NSMakeSize(18, 18) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+        [[NSColor blackColor] set];
+        NSBezierPath* arc = [NSBezierPath bezierPath];
+        [arc appendBezierPathWithArcWithCenter:NSMakePoint(9, 9) radius:6.5 startAngle:20 endAngle:-40 clockwise:NO];
+        arc.lineWidth = 2;
+        [arc stroke];
+        NSBezierPath* bar = [NSBezierPath bezierPath];
+        [bar moveToPoint:NSMakePoint(9, 9)];
+        [bar lineToPoint:NSMakePoint(15.5, 9)];
+        bar.lineWidth = 2;
+        [bar stroke];
+        return YES;
+    }];
+    [image setTemplate:YES];
+    image.accessibilityDescription = @"FastGH";
+    return image;
+}
+
+void ShowStatusItem() {
+    if (g_statusItem) return;
+    if (!g_statusTarget) g_statusTarget = [[FastGHStatusTarget alloc] init];
+    g_statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
+    g_statusItem.button.image = StatusImage();
+    g_statusItem.button.accessibilityTitle = @"FastGH";
+    g_statusItem.button.toolTip = @"FastGH";
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"FastGH"];
+    auto add = [&](NSString* title, SEL action) {
+        NSMenuItem* item = [menu addItemWithTitle:title action:action keyEquivalent:@""];
+        item.target = g_statusTarget;
+    };
+    add(@"Show FastGH", @selector(show:));
+    add(@"Refresh", @selector(refresh:));
+    [menu addItem:[NSMenuItem separatorItem]];
+    add(@"Quit FastGH", @selector(quit:));
+    g_statusItem.menu = menu;
+}
+
+void RemoveStatusItem() {
+    if (!g_statusItem) return;
+    [NSStatusBar.systemStatusBar removeStatusItem:g_statusItem];
+    g_statusItem = nil;
+}
+
 OSStatus OnHotKey(EventHandlerCallRef, EventRef, void*) {
     // Carbon calls this on the main thread, from the run loop.
     if (g_callback) g_callback();
@@ -84,13 +157,22 @@ void UnregisterGlobalHotkey(wxFrame*) {
     g_callback = nullptr;
 }
 
-void HideApp(wxFrame*) {
-    // The system's Hide: the window stays open, and focus (and VoiceOver) goes
-    // back to the app used before, just as with Cmd+H.
+void SetMenuBarActions(MenuBarActions actions) {
+    g_menuActions = std::move(actions);
+}
+
+void HideApp(wxFrame* frame) {
+    // Out of the Dock and Cmd+Tab, into the menu bar. Hiding the app as well gives
+    // the focus (and VoiceOver) back to the app used before.
+    ShowStatusItem();
+    if (frame) frame->Hide();
     [NSApp hide:nil];
+    NSApp.activationPolicy = NSApplicationActivationPolicyAccessory;
 }
 
 void ShowApp(wxFrame* frame) {
+    NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
+    RemoveStatusItem();
     [NSApp unhide:nil];
     if (frame) {
         if (frame->IsIconized()) frame->Iconize(false);
@@ -102,7 +184,7 @@ void ShowApp(wxFrame* frame) {
 }
 
 bool IsAppFrontmost(wxFrame* frame) {
-    return NSApp.isActive && !NSApp.isHidden && frame && frame->IsShown() && !frame->IsIconized();
+    return NSApp.activationPolicy == NSApplicationActivationPolicyRegular && NSApp.isActive && !NSApp.isHidden && frame && frame->IsShown() && !frame->IsIconized();
 }
 
 void Announce(const std::string& text) {

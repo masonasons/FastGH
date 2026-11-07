@@ -52,6 +52,8 @@ bool IsAppFrontmost(wxFrame* frame) {
 
 void Announce(const std::string&) {}
 
+void SetMenuBarActions(MenuBarActions) {}
+
 void SetBadgeCount(int) {}
 
 }  // namespace platform

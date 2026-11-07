@@ -164,10 +164,13 @@ void CheckForUpdates(bool silent) {
             return;
         }
         bool available;
-        if (!info.commit.empty()) {
+        auto latest = ParseVersion(info.version), current = ParseVersion(APP_VERSION);
+        if (!latest.empty() && latest < current) {
+            available = false;  // never "update" to an older version
+        } else if (!info.commit.empty()) {
             available = !StartsWith(local, info.commit) && !StartsWith(info.commit, local);
         } else {
-            available = ParseVersion(info.version) > ParseVersion(APP_VERSION);
+            available = latest > current;
         }
         if (!available) {
             if (!silent)
