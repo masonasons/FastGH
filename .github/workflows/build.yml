@@ -40,7 +40,7 @@ jobs:
           $version = (Select-String -Path src/version.h -Pattern '#define APP_VERSION "(.+)"').Matches[0].Groups[1].Value
           # The updater unpacks the zip and copies its FastGH folder over the program.
           New-Item -ItemType Directory -Force -Path dist/FastGH | Out-Null
-          Copy-Item build/out/Release/FastGH.exe dist/FastGH/
+          Copy-Item build/out/FastGH.exe dist/FastGH/
           $zip = "FastGH-$version-Windows.zip"
           Compress-Archive -Path dist/FastGH -DestinationPath $zip
           echo "path=$zip" >> $env:GITHUB_OUTPUT
