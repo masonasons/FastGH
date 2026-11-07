@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 
-/** Human-readable feed descriptions, ported from the desktop app's models/event.py. */
+/** Human-readable feed descriptions, worded as the desktop app's (src/core/models.cpp). */
 object EventDescriber {
 
     private val EVENT_TYPES = mapOf(

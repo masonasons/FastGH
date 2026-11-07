@@ -14,7 +14,7 @@ on:
     branches: [master]
     paths:
       - 'android/**'
-      - 'version.py'
+      - 'src/version.h'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 

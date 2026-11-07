@@ -4,10 +4,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-// The version is the desktop app's (version.py); the build number is the count of
+// The version is the desktop app's (src/version.h); the build number is the count of
 // commits, so each build is higher than the last, as in FastPlay.
-val appVersion: String = rootProject.file("../version.py").readLines()
-    .firstOrNull { it.startsWith("APP_VERSION") }
+val appVersion: String = rootProject.file("../src/version.h").readLines()
+    .firstOrNull { it.startsWith("#define APP_VERSION ") }
     ?.substringAfter('"')?.substringBefore('"') ?: "0.0.0"
 val buildNumber: Int = runCatching {
     providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }

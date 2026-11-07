@@ -20,27 +20,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # CMake fetches and builds wxWidgets into build\; keep it between runs.
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          path: build/_deps
+          key: cmake-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: cmake-deps-${{ runner.os }}-
 
-      - name: Install dependencies
+      - name: Build
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          cmake -S . -B build -A x64
+          cmake --build build --config Release --parallel
 
-      - name: Build executable
-        run: python build.py
-
-      - name: Find build artifact
+      - name: Package
         id: artifact
-        run: |
-          $zip = Get-ChildItem -Path . -Filter "FastGH-*-Windows.zip" | Select-Object -First 1
-          echo "path=$($zip.FullName)" >> $env:GITHUB_OUTPUT
-          echo "name=$($zip.Name)" >> $env:GITHUB_OUTPUT
         shell: pwsh
+        run: |
+          $version = (Select-String -Path src/version.h -Pattern '#define APP_VERSION "(.+)"').Matches[0].Groups[1].Value
+          # The updater unpacks the zip and copies its FastGH folder over the program.
+          New-Item -ItemType Directory -Force -Path dist/FastGH | Out-Null
+          Copy-Item build/out/Release/FastGH.exe dist/FastGH/
+          $zip = "FastGH-$version-Windows.zip"
+          Compress-Archive -Path dist/FastGH -DestinationPath $zip
+          echo "path=$zip" >> $env:GITHUB_OUTPUT
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -55,26 +58,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          path: build/_deps
+          key: cmake-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: cmake-deps-${{ runner.os }}-
 
-      - name: Install dependencies
+      - name: Build
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel "$(sysctl -n hw.ncpu)"
 
-      - name: Build executable
-        run: python build.py
-
-      - name: Find build artifact
+      - name: Sign and make the disk image
         id: artifact
         run: |
-          DMG=$(ls FastGH-*.dmg 2>/dev/null | head -1)
+          VERSION=$(sed -n 's/#define APP_VERSION "\(.*\)"/\1/p' src/version.h)
+          codesign --force --deep --sign - build/FastGH.app
+          mkdir -p dmg
+          cp -R build/FastGH.app dmg/
+          ln -s /Applications dmg/Applications
+          DMG="FastGH-$VERSION.dmg"
+          hdiutil create -volname FastGH -srcfolder dmg -ov -format UDZO "$DMG"
           echo "path=$DMG" >> $GITHUB_OUTPUT
-          echo "name=$DMG" >> $GITHUB_OUTPUT
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -93,7 +99,7 @@ jobs:
       - name: Get version
         id: version
         run: |
-          version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
+          version=$(sed -n 's/#define APP_VERSION "\(.*\)"/\1/p' src/version.h)
           echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Download Windows artifact

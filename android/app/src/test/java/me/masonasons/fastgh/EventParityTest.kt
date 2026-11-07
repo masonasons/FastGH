@@ -12,8 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Checks the Kotlin port of the feed descriptions against fixtures produced by the
- * desktop app's models/event.py (see android/scripts/generate_event_fixtures.py).
+ * Checks the Kotlin port of the feed descriptions against the fixture the desktop
+ * app is also tested against (tests/event_parity.cpp), so both word the feed alike.
  */
 class EventParityTest {
     @Test

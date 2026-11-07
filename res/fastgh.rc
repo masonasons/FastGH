@@ -1,0 +1,5 @@
+// The icon the window and tray use (wxICON(appicon)), and wxWidgets' manifest
+// (common controls 6, per-monitor DPI awareness).
+appicon ICON "fastgh.ico"
+#define wxUSE_DPI_AWARE_MANIFEST 2
+#include "wx/msw/wx.rc"

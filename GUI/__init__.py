@@ -1,1 +1,0 @@
-"""FastGH GUI components."""
