@@ -23,13 +23,13 @@
 
 namespace {
 
-enum Page { kFeed, kRepos, kStarred, kWatched, kFollowing, kNotifications, kPageCount };
+enum Tab { kFeed, kRepos, kStarred, kWatched, kFollowing, kNotifications, kPageCount };
 
 enum MenuId {
     ID_ACCOUNTS = wxID_HIGHEST + 1,
     ID_HIDE,
     ID_REFRESH,
-    ID_PAGE_FIRST,  // + Page
+    ID_PAGE_FIRST,  // + Tab
     ID_REPO_SYNC = ID_PAGE_FIRST + kPageCount,
     ID_MARK_ALL_READ,
     ID_SEARCH,
@@ -191,9 +191,9 @@ void MainFrame::BuildMenus() {
     // them there), Cmd+H is the system's Hide, and an Edit menu makes Cmd+C,
     // Cmd+V and Cmd+A work in every text field. Keys that the Edit menu, the
     // system or the lists own (Cmd+A, Cmd+C, Return) aren't menu shortcuts.
-    constexpr bool mac = true;
+    static constexpr bool mac = true;  // static: MSVC won't let a lambda use a local constexpr uncaptured
 #else
-    constexpr bool mac = false;
+    static constexpr bool mac = false;
 #endif
     // Shown in the menu but not bound, where binding it would steal the key.
     auto label = [](const wxString& text, const wxString& key, bool macUnbound = false) {
