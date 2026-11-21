@@ -1,18 +1,20 @@
 #pragma once
 
 // What FastGH asks of the operating system beyond wxWidgets
-// (platform_mac.mm, platform_windows.cpp, platform_other.cpp).
+// (platform_mac.mm, platform_windows.cpp, platform_gtk.cpp).
 
 #include <functional>
 #include <string>
 
 class wxFrame;
+class wxWindow;
 
 namespace platform {
 
 // Light/dark appearance: "off" (light), "on" (dark), "auto" (the system's).
-// On macOS this sets the app's appearance (it changes live); on Windows it is
-// read at startup by wxApp::MSWEnableDarkMode.
+// On macOS and Linux this sets the app's appearance (it changes live), where
+// "off" keeps the system's, as the Python app left it; on Windows it is read at
+// startup by wxApp::MSWEnableDarkMode.
 void ApplyAppearance(const std::string& mode);
 
 // A system-wide shortcut. `modifiers` are wxMOD_* (wxMOD_CONTROL is Command on
@@ -40,7 +42,26 @@ bool IsAppFrontmost(wxFrame* frame);
 // nothing yet, the status bar carries it). UTF-8.
 void Announce(const std::string& text);
 
-// The unread notification count on the Dock icon (macOS); 0 clears it.
+// The unread notification count on the Dock icon (macOS), or the launcher icon
+// where the Linux desktop shows one (KDE, Ubuntu's dock); 0 clears it.
 void SetBadgeCount(int count);
+
+#ifdef __WXGTK__
+// Linux and the BSDs (platform_gtk.cpp).
+
+// Makes `label` the label of `control` for screen readers, and its access key
+// (Alt+letter) focus the control.
+void LinkLabel(wxWindow* label, wxWindow* control);
+
+// Shows the file selected in the file manager; false when none answered.
+bool RevealFile(const std::string& path);
+
+// One FastGH per user. First: this is it, and `show` is called whenever FastGH
+// is started again. Handed: another one is running and has been asked to show
+// its window. NotAnswering: another one is running and didn't answer. NoBus:
+// there is no session bus to tell.
+enum class InstanceClaim { First, Handed, NotAnswering, NoBus };
+InstanceClaim ClaimSingleInstance(std::function<void()> show);
+#endif
 
 }  // namespace platform

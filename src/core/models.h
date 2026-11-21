@@ -40,7 +40,8 @@ struct Repository {
 
     static Repository FromJson(const json& data);
     std::string FormatDisplay() const;     // two lines
-    std::string FormatSingleLine() const;  // the list row
+    // The list row; a repository owned by `hideOwner` (case-insensitive) shows its name alone.
+    std::string FormatSingleLine(const std::string& hideOwner = "") const;
 };
 
 // --- Users (models/user.py, models/issue.py User) ---

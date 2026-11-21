@@ -23,6 +23,9 @@ bool SetGlobalHotkey(const std::string& hotkey);
 void ShowWindow();
 void HideWindow();
 void ToggleWindow();
+// False where hiding would leave no way back to the window (Linux without a
+// tray); HideWindow() then minimizes it.
+bool CanHide();
 // A system notification (Notification Center / Windows toast).
 void Notify(const wxString& title, const wxString& message);
 

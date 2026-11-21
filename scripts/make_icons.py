@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Draws FastGH's icon (the G mark the Python app drew for its tray icon) as
-res/fastgh.ico (Windows) and res/mac/FastGH.icns (macOS). Needs Pillow; on macOS
+res/fastgh.ico (Windows), res/mac/FastGH.icns (macOS) and res/linux/FastGH.png
+(Linux: the window and tray icon, built in, and the desktop entry's). Needs Pillow; on macOS
 also iconutil. Run again only if the design changes."""
 import os, shutil, subprocess, sys, tempfile
 from PIL import Image, ImageDraw
@@ -23,6 +24,8 @@ def draw(size):
 def main():
     sizes = [16, 24, 32, 48, 64, 128, 256]
     draw(256).save(os.path.join(ROOT, "res", "fastgh.ico"), sizes=[(n, n) for n in sizes])
+    os.makedirs(os.path.join(ROOT, "res", "linux"), exist_ok=True)
+    draw(256).save(os.path.join(ROOT, "res", "linux", "FastGH.png"), optimize=True)
     if sys.platform == "darwin" and shutil.which("iconutil"):
         tmp = tempfile.mkdtemp()
         iconset = os.path.join(tmp, "FastGH.iconset")

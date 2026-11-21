@@ -5,6 +5,7 @@
 #include "ui/ui_common.h"
 
 #include "core/app.h"
+#include "platform/platform.h"
 #include "version.h"
 
 #include <wx/snglinst.h>
@@ -41,7 +42,23 @@ bool FastGHApp::OnInit() {
     delete wxLog::SetActiveTarget(new SilentLog());
     SetAppName(APP_NAME);
 
-#ifndef __WXOSX__
+#ifdef __WXGTK__
+    // Starting FastGH again brings back the running one's window (which may be
+    // hidden with no tray icon to click), as starting an app does on macOS.
+    switch (platform::ClaimSingleInstance([] { mainwin::ShowWindow(); })) {
+        case platform::InstanceClaim::First: break;
+        case platform::InstanceClaim::Handed: return false;
+        case platform::InstanceClaim::NotAnswering:
+            wxMessageBox("Another instance of FastGH is already running.", APP_NAME, wxOK | wxICON_WARNING);
+            return false;
+        case platform::InstanceClaim::NoBus:
+            m_instance = std::make_unique<wxSingleInstanceChecker>("FastGH-" + wxGetUserId());
+            if (m_instance->IsAnotherRunning()) {
+                wxMessageBox("Another instance of FastGH is already running.", APP_NAME, wxOK | wxICON_WARNING);
+                return false;
+            }
+    }
+#elif !defined(__WXOSX__)
     // macOS keeps one copy running itself.
     m_instance = std::make_unique<wxSingleInstanceChecker>("FastGH-" + wxGetUserId());
     if (m_instance->IsAnotherRunning()) {
@@ -71,7 +88,7 @@ bool FastGHApp::OnInit() {
 #ifdef __WXOSX__
     frame->Show();
 #else
-    if (app::Prefs().GetBool("window_shown", true)) frame->Show();
+    if (app::Prefs().GetBool("window_shown", true) || !mainwin::CanHide()) frame->Show();
 #endif
     // The lists start loading at once; names and token checks happen alongside.
     mainwin::RefreshAll();

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=FastGH
+GenericName=GitHub Client
+Comment=A fast, accessible GitHub client
+Exec=FastGH
+Icon=FastGH
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=GitHub;git;issues;pull requests;
+StartupNotify=true
+StartupWMClass=FastGH

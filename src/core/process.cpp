@@ -144,9 +144,8 @@ ProcessResult RunProcess(const std::vector<std::string>& args, const std::string
     posix_spawn_file_actions_adddup2(&actions, fds[1], STDERR_FILENO);
     posix_spawn_file_actions_addclose(&actions, fds[0]);
     posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
-#ifdef __APPLE__
+    // macOS, and glibc since 2.29: without this, git would run in FastGH's own directory.
     if (!cwd.empty()) posix_spawn_file_actions_addchdir_np(&actions, cwd.c_str());
-#endif
 
     std::vector<char*> argv;
     for (const auto& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));

@@ -237,10 +237,8 @@ public:
         auto* row = new wxBoxSizer(wxHORIZONTAL);
         auto* browse = new wxButton(m_panel, wxID_ANY, "&Browse...");
         m_runSync = new wxButton(m_panel, wxID_ANY, "Run Sync &Now");
-        m_runUpdate = new wxButton(m_panel, wxID_ANY, "Run .GITHUB Repo &Update");
         row->Add(browse, 0, wxRIGHT, 6);
-        row->Add(m_runSync, 0, wxRIGHT, 6);
-        row->Add(m_runUpdate, 0);
+        row->Add(m_runSync, 0);
         m_sizer->Add(row, 0, wxALL, 10);
         m_sizer->AddStretchSpacer();
 
@@ -253,7 +251,6 @@ public:
 
         browse->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { Browse(); });
         m_runSync->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { RunSyncNow(); });
-        m_runUpdate->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { RunRepoUpdate(); });
         save->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
             app::RepoSync().SetRepoConfig(m_key, Current());
             EndModal(wxID_OK);
@@ -280,12 +277,9 @@ private:
         if (!path.empty()) m_path->SetValue(path);
     }
 
-    void SetRunning(bool running) {
-        m_runSync->Enable(!running);
-        m_runUpdate->Enable(!running);
-    }
+    void SetRunning(bool running) { m_runSync->Enable(!running); }
 
-    // Both runs are git work that can take a while: off the UI thread.
+    // git work that can take a while: off the UI thread.
     void RunSyncNow() {
         RepoSyncConfig cfg = Current();
         std::string key = m_key;
@@ -300,38 +294,12 @@ private:
                  });
     }
 
-    void RunRepoUpdate() {
-        std::string path = Current().path;
-        if (path.empty()) {
-            ShowError(this, "Set a local path first.", "Missing Path");
-            return;
-        }
-        SetRunning(true);
-        SetStatus("Running repo update...");
-        RunAsync(this,
-                 [path]() -> std::optional<std::string> {
-                     try {
-                         app::RepoSync().RunRepoUpdate(path);
-                         return std::nullopt;
-                     } catch (const std::exception& e) {
-                         return std::string(e.what());
-                     }
-                 },
-                 [this](std::optional<std::string> error) {
-                     SetRunning(false);
-                     SetStatus("");
-                     if (error) ShowError(this, U8(*error), "Repo Update Failed");
-                     else ShowInfo(this, "Repo update completed.", "Repo Update");
-                 });
-    }
-
     std::string m_key;
     wxCheckBox* m_enabled;
     wxCheckBox* m_pull;
     wxCheckBox* m_push;
     wxTextCtrl* m_path;
     wxButton* m_runSync;
-    wxButton* m_runUpdate;
 };
 
 // --- The repository window ---

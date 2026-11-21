@@ -10,6 +10,7 @@
 #include "core/app.h"
 #include "core/feed_filter.h"
 #include "core/util.h"
+#include "ui/hotkey.h"
 #include "ui/main_frame.h"
 #include "ui/ui_common.h"
 
@@ -416,9 +417,10 @@ private:
         m_darkMode->SetSelection(dark == "auto" ? 1 : dark == "on" ? 2 : 0);
         s->Add(m_darkMode, 0, wxLEFT | wxRIGHT | wxTOP, 10);
 
-        AddLabel(page, s, "Show/&hide window hotkey:");
+        wxStaticText* hotkeyLabel = AddLabel(page, s, "Show/&hide window hotkey:");
         auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_hotkey = new wxTextCtrl(page, wxID_ANY, U8(P().GetString("global_hotkey")));
+        m_hotkey = new HotkeyCtrl(page, U8(P().GetString("global_hotkey")));
+        LabelControl(hotkeyLabel, m_hotkey);
         row->Add(m_hotkey, 1, wxRIGHT | wxALIGN_CENTER_VERTICAL, 5);
         auto* clear = new wxButton(page, wxID_ANY, "C&lear");
         row->Add(clear, 0, wxALIGN_CENTER_VERTICAL);
@@ -427,9 +429,12 @@ private:
             m_hotkey->Clear();
             m_hotkey->SetFocus();
         });
-        wxString hint = "Format: control+alt+g, win+shift+h, etc. Leave empty to disable.";
 #ifdef __WXOSX__
-        hint += "\nOn macOS, control means Command.";
+        wxString hint = "In the field, press the keys to use, such as Command+Option+G. "
+                        "Clear leaves it empty, which turns the hotkey off.";
+#else
+        wxString hint = "In the field, press the keys to use, such as Control+Alt+G. "
+                        "Clear leaves it empty, which turns the hotkey off.";
 #endif
         s->Add(new wxStaticText(page, wxID_ANY, hint), 0, wxLEFT | wxRIGHT | wxTOP, 10);
 
@@ -475,10 +480,6 @@ private:
                                  P().GetBool("repo_sync_enabled"));
         m_syncInterval = AddSpin(page, s, "Sync &interval in minutes (0 = disabled):", 240,
                                  P().GetInt("repo_sync_interval_minutes", 0));
-        m_syncUseTools = AddCheck(page, s, "&Use .GITHUB repo bootstrap updater before git sync",
-                                  P().GetBool("repo_sync_use_github_tools", true));
-        m_syncToolsPath = AddFolderRow(page, s, ".GITHUB &tools path:", "&Browse...", "Select .GITHUB Tools Path",
-                                       P().GetString("repo_sync_github_tools_path"));
     }
 
     void BuildFeedFilter() {
@@ -689,14 +690,12 @@ private:
         std::string oldHotkey = P().GetString("global_hotkey");
         std::string hotkey = ToLower(Trim(ToU8(m_hotkey->GetValue())));
         if (!hotkey.empty()) {
-            std::vector<std::string> parts = Split(hotkey, '+');
-            static const std::set<std::string> modifiers = {"control", "ctrl", "alt", "shift", "win"};
-            bool hasModifier = false;
-            for (const auto& part : parts) hasModifier = hasModifier || modifiers.count(Trim(part)) > 0;
-            if (!hasModifier || parts.size() < 2) {
+            if (!ParseHotkey(hotkey)) {
                 m_book->SetSelection(0);
                 ShowError(this,
-                          "Invalid hotkey format.\n\nPlease use format: modifier+key\nExample: control+alt+g",
+                          "\"" + U8(hotkey) + "\" isn't a hotkey FastGH can use.\n\n"
+                          "Press the keys in the field: Control, Alt or the Windows key with a letter, "
+                          "digit, function key or the like (for example Control+Alt+G).",
                           "Invalid Hotkey");
                 m_hotkey->SetFocus();
                 return false;
@@ -710,8 +709,6 @@ private:
         P().Set("git_lfs_enabled", m_gitLfs->GetValue());
         P().Set("repo_sync_enabled", m_syncEnabled->GetValue());
         P().Set("repo_sync_interval_minutes", m_syncInterval->GetValue());
-        P().Set("repo_sync_use_github_tools", m_syncUseTools->GetValue());
-        P().Set("repo_sync_github_tools_path", Trim(ToU8(m_syncToolsPath->GetValue())));
         P().Set("notify_activity", m_notifyActivity->GetValue());
         P().Set("notify_notifications", m_notifyNotifications->GetValue());
         P().Set("notify_starred", m_notifyStarred->GetValue());
@@ -776,7 +773,7 @@ private:
 
     wxTextCtrl* m_downloadPath;
     wxChoice* m_darkMode;
-    wxTextCtrl* m_hotkey;
+    HotkeyCtrl* m_hotkey;
     wxCheckBox* m_checkUpdates;
 
     wxCheckBox* m_notifyActivity;
@@ -793,8 +790,6 @@ private:
 
     wxCheckBox* m_syncEnabled;
     wxSpinCtrl* m_syncInterval;
-    wxCheckBox* m_syncUseTools;
-    wxTextCtrl* m_syncToolsPath;
 
     FilterEditor* m_filterEditor;
     wxListBox* m_mutedList;

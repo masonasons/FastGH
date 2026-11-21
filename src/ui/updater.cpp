@@ -16,6 +16,11 @@
 
 #include <atomic>
 #include <regex>
+#if !defined(_WIN32) && !defined(__APPLE__)
+#include "core/process.h"
+#include <filesystem>
+#include <wx/utils.h>
+#endif
 
 namespace {
 
@@ -26,6 +31,53 @@ struct UpdateInfo {
     std::string commit;
     std::string assetUrl;
 };
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+// What the Linux download for this machine is called: FastGH-1.2.3-Linux-x86_64.tar.gz.
+const char* LinuxAssetTag() {
+#if defined(__aarch64__)
+    return "linux-aarch64";
+#else
+    return "linux-x86_64";
+#endif
+}
+
+// Unpacks the downloaded FastGH folder over the one FastGH runs from. Each file
+// goes in under a temporary name and is renamed over the old one, as a running
+// program can't be written over but can be replaced. Returns an error, or "".
+std::string InstallLinuxUpdate(const std::string& archive, const std::string& dir) {
+    namespace fs = std::filesystem;
+    std::string extract = JoinPath(dir, "FastGH-update");
+    RemoveTree(extract);
+    if (!MakeDirs(extract)) return "Could not create " + extract;
+    ProcessResult tar = RunProcess({"tar", "-xzf", archive, "-C", extract}, "");
+    std::string error;
+    std::string from = JoinPath(extract, "FastGH");
+    if (!tar.started) error = "tar could not be run.";
+    else if (tar.exitCode != 0) error = "The update could not be unpacked:\n" + Trim(tar.output);
+    else if (!PathExists(JoinPath(from, "FastGH"))) error = "The update doesn't contain FastGH.";
+    else {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(fs::u8path(from), ec)) {
+            if (!entry.is_regular_file()) continue;
+            fs::path target = fs::u8path(dir) / entry.path().filename();
+            fs::path temp = target;
+            temp += ".new";
+            fs::copy_file(entry.path(), temp, fs::copy_options::overwrite_existing, ec);
+            if (!ec) fs::rename(temp, target, ec);
+            if (ec) {
+                error = "Could not replace " + target.u8string() + ": " + ec.message();
+                break;
+            }
+        }
+        if (error.empty() && ec) error = "Could not read the update: " + ec.message();
+    }
+    RemoveTree(extract);
+    std::error_code ignored;
+    fs::remove(fs::u8path(archive), ignored);
+    return error;
+}
+#endif
 
 UpdateInfo FetchLatest() {
     UpdateInfo info;
@@ -53,8 +105,10 @@ UpdateInfo FetchLatest() {
             std::string name = ToLower(asset.value("name", ""));
 #ifdef _WIN32
             bool mine = name.find("windows") != std::string::npos && EndsWith(name, ".zip");
-#else
+#elif defined(__APPLE__)
             bool mine = EndsWith(name, ".dmg");
+#else
+            bool mine = name.find(LinuxAssetTag()) != std::string::npos && EndsWith(name, ".tar.gz");
 #endif
             if (mine) {
                 info.assetUrl = asset.value("browser_download_url", "");
@@ -86,8 +140,15 @@ void Install(const UpdateInfo& info) {
     std::string fileName = info.assetUrl.substr(info.assetUrl.rfind('/') + 1);
 #ifdef _WIN32
     std::string dest = ToU8(wxFileName(wxStandardPaths::Get().GetExecutablePath()).GetPath()) + "\\FastGH-update.zip";
-#else
+#elif defined(__APPLE__)
     std::string dest = JoinPath(JoinPath(HomeDir(), "Downloads"), fileName);
+#else
+    // Installed where this user can write (install.sh puts it in ~/.local/share):
+    // FastGH updates itself. Elsewhere (a package, /opt) it is only downloaded.
+    std::string exeDir = ToU8(wxFileName(wxStandardPaths::Get().GetExecutablePath()).GetPath());
+    bool inPlace = wxFileName::IsDirWritable(U8(exeDir));
+    std::string dest = inPlace ? JoinPath(exeDir, "FastGH-update.tar.gz")
+                               : JoinPath(JoinPath(HomeDir(), "Downloads"), fileName);
 #endif
     std::string url = info.assetUrl;
     RunAsync(owner,
@@ -113,7 +174,7 @@ void Install(const UpdateInfo& info) {
                  };
                  return HttpSend(req);
              },
-             [progress, cancelled, dest](HttpResponse res) {
+             [=](HttpResponse res) {
                  progress->Destroy();
                  if (cancelled->load()) return;
                  if (!res.ok()) {
@@ -138,12 +199,38 @@ void Install(const UpdateInfo& info) {
                  ShowInfo(GetActiveOwner(), "Update ready. FastGH will now restart.", "Update");
                  wxExecute("cmd /c \"" + script + "\"", wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE);
                  mainwin::Exit();
-#else
+#elif defined(__APPLE__)
                  ShowInfo(GetActiveOwner(),
                           U8("FastGH has been downloaded to:\n" + dest +
                              "\n\nIt will open now: drag FastGH to your Applications folder to finish the update."),
                           "Update Downloaded");
                  wxLaunchDefaultApplication(U8(dest));
+#else
+                 if (!inPlace) {
+                     ShowInfo(GetActiveOwner(),
+                              U8("FastGH has been downloaded to:\n" + dest + "\n\nFastGH can't replace itself in " +
+                                 exeDir + ". Unpack the download and run its install.sh to update."),
+                              "Update Downloaded");
+                     return;
+                 }
+                 std::string error;
+                 {
+                     wxBusyCursor busy;
+                     error = InstallLinuxUpdate(dest, exeDir);
+                 }
+                 if (!error.empty()) {
+                     ShowError(GetActiveOwner(), U8("Failed to install the update: " + error), "Update Error");
+                     return;
+                 }
+                 ShowInfo(GetActiveOwner(), "Update ready. FastGH will now restart.", "Update");
+                 // Started again once this one has gone, so it isn't handed to this one.
+                 std::string pid = std::to_string(wxGetProcessId());
+                 std::string exe = JoinPath(exeDir, "FastGH");
+                 const char* argv[] = {"/bin/sh", "-c",
+                                       "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; exec \"$2\"",
+                                       "sh", pid.c_str(), exe.c_str(), nullptr};
+                 wxExecute(argv, wxEXEC_ASYNC);
+                 mainwin::Exit();
 #endif
              });
 }

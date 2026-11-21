@@ -11,6 +11,9 @@
 #ifdef __WXOSX__
 #include <wx/osx/private.h>
 #endif
+#ifdef __WXMSW__
+#include <wx/msw/wrapwin.h>
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -109,6 +112,9 @@ void RevealInFileManager(const wxString& path) {
     argv[2] = p.data();
     wxExecute(argv, wxEXEC_ASYNC);
 #else
+#ifdef __WXGTK__
+    if (platform::RevealFile(ToU8(path))) return;  // the file manager selects it
+#endif
     wxLaunchDefaultApplication(wxFileName(path).GetPath());
 #endif
 }
@@ -372,6 +378,23 @@ void LabelControl(wxStaticText* label, wxWindow* control) {
     // siblings; this label was made after its control, so put it first (Windows
     // reads that order, and so does Tab).
     label->MoveBeforeInTabOrder(control);
+#ifdef __WXMSW__
+    // That reorders wxWidgets' list only. Screen readers name an edit box after
+    // the static text just before it in the windows' Z-order, which is still the
+    // creation order, so each field took the label of the field before it (#25):
+    // move the label's window to just before its control's as well.
+    HWND controlHwnd = static_cast<HWND>(control->GetHWND());
+    HWND labelHwnd = static_cast<HWND>(label->GetHWND());
+    HWND before = ::GetWindow(controlHwnd, GW_HWNDPREV);
+    if (before != labelHwnd)
+        ::SetWindowPos(labelHwnd, before ? before : HWND_TOP, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+#endif
+#ifdef __WXGTK__
+    // GTK names a control from the label whose mnemonic widget it is (Orca reads
+    // that), and the label's access key then focuses it.
+    platform::LinkLabel(label, control);
+#endif
 #ifdef __WXOSX__
     // On macOS the link is made once, when the control is created, to whatever
     // label preceded it then (the previous control's): point it at its own.

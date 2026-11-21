@@ -39,7 +39,6 @@ bool RemoveAccount(int index);
 //   git_lfs_enabled (true), notify_activity/notifications/starred/watched (false),
 //   auto_refresh_interval (0 minutes), repo_sync_enabled (false),
 //   repo_sync_interval_minutes (0), repo_sync_configs ({}),
-//   repo_sync_use_github_tools (true), repo_sync_notify (true),
-//   repo_sync_github_tools_path, check_for_updates (true)
+//   repo_sync_notify (true), check_for_updates (true)
 
 }  // namespace app

@@ -93,7 +93,6 @@ RepoSyncResult RepoSyncManager::SyncOne(const std::string& fullName, const RepoS
     if (!IsDirectory(JoinPath(path, ".git"))) return {fullName, false, "Not a git repo: " + path};
 
     try {
-        RunRepoUpdate(path);
         Git(path, {"fetch", "--all", "--prune"});
         if (config.autoPull) {
             Git(path, {"pull", "--ff-only"});
@@ -132,27 +131,4 @@ RepoSyncResult RepoSyncManager::SyncOne(const std::string& fullName, const RepoS
     } catch (const std::exception& e) {
         return {fullName, false, e.what()};
     }
-}
-
-void RepoSyncManager::RunRepoUpdate(const std::string& repoPath) {
-    if (!m_prefs.GetBool("repo_sync_use_github_tools", true)) return;
-    std::string tools = m_prefs.GetString("repo_sync_github_tools_path");
-    if (tools.empty() || !IsDirectory(tools)) return;
-
-    std::vector<std::string> cmd;
-#ifdef _WIN32
-    std::string batch = JoinPath(JoinPath(tools, "raywonder-repo-bootstrap"), "run-repo-update.bat");
-    if (!PathExists(batch)) return;
-    cmd = {"cmd", "/c", batch, repoPath};
-#else
-    std::string script = JoinPath(tools, "raywonder-repo-bootstrap/scripts/pull_and_fix_repo.ps1");
-    if (!PathExists(script)) return;
-    std::string shell = FindOnPath("pwsh");
-    if (shell.empty()) shell = FindOnPath("powershell");
-    if (shell.empty()) return;
-    cmd = {shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-RepoRoot", repoPath};
-#endif
-    ProcessResult r = RunProcess(cmd, tools);
-    if (!r.started || r.exitCode != 0)
-        throw std::runtime_error("Repo bootstrap failed: " + Join(cmd) + "\n" + Trim(r.output));
 }

@@ -88,8 +88,63 @@ jobs:
           name: macos-build
           path: ${{ steps.artifact.outputs.path }}
 
+  build-linux:
+    # The oldest supported Ubuntu, so the program runs on every distribution with
+    # glibc 2.35 or later (Debian 12, Ubuntu 22.04, Fedora 36, current Arch...).
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build libgtk-3-dev libcurl4-openssl-dev libnotify-dev libx11-dev libxi-dev
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: cmake-deps-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: cmake-deps-${{ runner.os }}-${{ matrix.arch }}-
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel "$(nproc)"
+          strip build/out/FastGH/FastGH
+
+      - name: Test
+        run: |
+          cmake --build build --target fastgh_tests
+          build/fastgh_tests android/app/src/test/resources/event_parity.json
+
+      - name: Package
+        id: artifact
+        run: |
+          VERSION=$(sed -n 's/#define APP_VERSION "\(.*\)"/\1/p' src/version.h)
+          # The updater unpacks this and copies its FastGH folder over the program.
+          TARBALL="FastGH-$VERSION-Linux-${{ matrix.arch }}.tar.gz"
+          tar -C build/out -czf "$TARBALL" FastGH
+          echo "path=$TARBALL" >> $GITHUB_OUTPUT
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-${{ matrix.arch }}
+          path: ${{ steps.artifact.outputs.path }}
+
   release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
 
     steps:
@@ -112,6 +167,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: macos-build
+          path: artifacts/
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: linux-build-*
+          merge-multiple: true
           path: artifacts/
 
       - name: List artifacts
@@ -146,6 +208,7 @@ jobs:
             ## Downloads
             - **Windows:** FastGH-${{ steps.version.outputs.version }}-Windows.zip
             - **macOS:** FastGH-${{ steps.version.outputs.version }}.dmg
+            - **Linux:** FastGH-${{ steps.version.outputs.version }}-Linux-x86_64.tar.gz (or -aarch64 for ARM). Unpack it and run `FastGH/install.sh`, or run `FastGH/FastGH` where it is. Needs GTK 3 and libcurl, which desktop distributions include.
             - **Android:** FastGH.apk (Android 8 or later)
           files: artifacts/*
           prerelease: true

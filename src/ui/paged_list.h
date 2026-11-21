@@ -11,6 +11,10 @@
 //       return account->GetIssuesPage(owner, name, state, page);
 //   });
 //
+// With SortBy() the list is kept in that order instead: every page is fetched
+// (one after another, without waiting for the reader) and the rows re-sorted
+// as each arrives, the selection staying on the same item.
+//
 // The PagedList belongs to the list box and is deleted with it: create it with new
 // and never delete it. Fetches run on worker threads; a fetch started before the
 // last Load() is ignored when it returns.
@@ -18,8 +22,10 @@
 #include "core/github.h"
 #include "ui/ui_common.h"
 
+#include <algorithm>
 #include <future>
 #include <memory>
+#include <optional>
 
 template <typename T>
 class PagedList {
@@ -27,6 +33,7 @@ public:
     using Fetch = std::function<Page<T>(int page)>;  // runs on a worker thread
     using Format = std::function<wxString(const T&)>;
     using Filter = std::function<bool(const T&)>;
+    using Less = std::function<bool(const T&, const T&)>;
 
     // `noun` names the items in the status rows ("issues": "Loading more issues...", "No issues").
     PagedList(wxListBox* list, const wxString& noun, Format format)
@@ -51,6 +58,9 @@ public:
         m_filter = std::move(filter);
         Render(true);
     }
+
+    // Keeps the list sorted by `less` (and so loads every page). Call before Load().
+    void SortBy(Less less) { m_less = std::move(less); }
 
     // Moves the focus to the list when its first page arrives (once), as the commits
     // list always did: before then the dialog has nothing to focus but its other controls.
@@ -104,8 +114,9 @@ public:
                 m_hasMore = r.page.hasMore;
                 m_nextPage = pages + 1;
                 m_error = r.error;
-                Render(true);
+                RenderKeepingItem();
                 if (m_onLoaded) m_onLoaded(true);
+                if (m_less && m_hasMore) FetchNext();  // a sorted list holds every page
             });
     }
 
@@ -162,6 +173,11 @@ private:
                     if (!focus || wxGetTopLevelParent(focus) == wxGetTopLevelParent(m_list)) m_list->SetFocus();
                 }
                 if (m_onLoaded) m_onLoaded(first);
+                // A sorted list fetches the rest straight away.
+                if (m_less) {
+                    if (m_hasMore) FetchNext();
+                    return;
+                }
                 // A page whose items were all filtered out: keep going.
                 if (m_hasMore && !m_shown.empty() && ::Selected(m_list) >= static_cast<int>(m_shown.size()) - 1)
                     MaybeLoadMore();
@@ -177,6 +193,11 @@ private:
             Render(false);
             if (!m_shown.empty()) m_list->SetSelection(0);
             if (m_onSelect) m_onSelect();
+            return;
+        }
+        // A sorted list takes later pages in among the rows already there.
+        if (m_less) {
+            RenderKeepingItem();
             return;
         }
         // Later pages are appended, so the reader's place and the list's scroll stay put.
@@ -203,6 +224,7 @@ private:
 
     // Shows m_all (filtered) in one go; `keepPlace` keeps the selection index.
     void Render(bool keepPlace) {
+        if (m_less) std::stable_sort(m_all.begin(), m_all.end(), m_less);
         m_shown.clear();
         std::vector<wxString> rows;
         for (const auto& item : m_all) {
@@ -220,7 +242,23 @@ private:
         SetListItems(m_list, rows);
     }
 
+    // Render(true), with the selection following its item when the order moved it.
+    void RenderKeepingItem() {
+        std::optional<T> keep;
+        int sel = ::Selected(m_list);
+        if (m_less && sel >= 0 && sel < static_cast<int>(m_shown.size())) keep = m_shown[sel];
+        Render(true);
+        if (!keep) return;
+        for (size_t i = 0; i < m_shown.size(); i++) {
+            if (!m_less(m_shown[i], *keep) && !m_less(*keep, m_shown[i])) {
+                if (static_cast<int>(i) != sel) m_list->SetSelection(static_cast<int>(i));
+                return;
+            }
+        }
+    }
+
     void MaybeLoadMore() {
+        if (m_less) return;  // every page is fetched anyway
         if (m_loading || !m_hasMore || m_shown.empty()) return;
         int i = ::Selected(m_list);
         if (i < static_cast<int>(m_shown.size()) - 1) return;
@@ -233,6 +271,7 @@ private:
     wxString m_noun;
     Format m_format;
     Filter m_filter;
+    Less m_less;
     Fetch m_fetch;
     std::function<void()> m_onSelect;
     std::function<void(bool)> m_onLoaded;

@@ -34,8 +34,6 @@ public:
     std::vector<RepoSyncResult> SyncAllEnabled();
     RepoSyncResult SyncOne(const std::string& fullName);
     RepoSyncResult SyncOne(const std::string& fullName, const RepoSyncConfig& config);
-    // The external ".GITHUB" bootstrap helper, when configured. Throws std::runtime_error on failure.
-    void RunRepoUpdate(const std::string& repoPath);
 
 private:
     Config& m_prefs;

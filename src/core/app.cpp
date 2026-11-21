@@ -40,13 +40,7 @@ void LoadPrefs() {
     p.SetDefault("repo_sync_enabled", false);
     p.SetDefault("repo_sync_interval_minutes", 0);
     p.SetDefault("repo_sync_configs", json::object());
-    p.SetDefault("repo_sync_use_github_tools", true);
     p.SetDefault("repo_sync_notify", true);
-#ifdef _WIN32
-    p.SetDefault("repo_sync_github_tools_path", JoinPath(JoinPath(JoinPath(home, "dev"), "apps"), ".GITHUB"));
-#else
-    p.SetDefault("repo_sync_github_tools_path", JoinPath(home, "DEV/APPS/.GITHUB"));
-#endif
     p.SetDefault("check_for_updates", true);
 
     g_repoSync = std::make_unique<RepoSyncManager>(p);

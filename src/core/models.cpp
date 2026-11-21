@@ -191,9 +191,10 @@ std::string Repository::FormatDisplay() const {
            lang + " | Pushed " + pushed;
 }
 
-std::string Repository::FormatSingleLine() const {
+std::string Repository::FormatSingleLine(const std::string& hideOwner) const {
     const std::string lang = language.empty() ? "Unknown" : language;
-    return fullName + " | " + std::to_string(stars) + " stars | " + lang + " | Pushed " +
+    const bool mine = !hideOwner.empty() && !name.empty() && ToLower(owner) == ToLower(hideOwner);
+    return (mine ? name : fullName) + " | " + std::to_string(stars) + " stars | " + lang + " | Pushed " +
            LocalOrUnknown(pushedAt);
 }
 

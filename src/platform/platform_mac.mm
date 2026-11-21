@@ -112,6 +112,9 @@ UInt32 MacKeyCode(int keyCode) {
         {WXK_RIGHT, kVK_RightArrow}, {',', kVK_ANSI_Comma}, {'.', kVK_ANSI_Period}, {'/', kVK_ANSI_Slash},
         {';', kVK_ANSI_Semicolon}, {'\'', kVK_ANSI_Quote}, {'[', kVK_ANSI_LeftBracket},
         {']', kVK_ANSI_RightBracket}, {'-', kVK_ANSI_Minus}, {'=', kVK_ANSI_Equal}, {'`', kVK_ANSI_Grave},
+        {'\\', kVK_ANSI_Backslash}, {WXK_DELETE, kVK_ForwardDelete}, {WXK_F13, kVK_F13}, {WXK_F14, kVK_F14},
+        {WXK_F15, kVK_F15}, {WXK_F16, kVK_F16}, {WXK_F17, kVK_F17}, {WXK_F18, kVK_F18}, {WXK_F19, kVK_F19},
+        {WXK_F20, kVK_F20},
     };
     auto it = keys.find(keyCode);
     return it == keys.end() ? UINT32_MAX : it->second;
